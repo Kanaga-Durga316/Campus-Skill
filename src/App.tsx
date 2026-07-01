@@ -1,0 +1,77 @@
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Navbar from './components/Navbar';
+import Hero from './components/Hero';
+import Features from './components/Features';
+import Footer from './components/Footer';
+import RegisterPage from './components/Register';
+import LoginPage from './components/Login';
+import Dashboard from './components/Dashboard';
+import Messages from './components/Messages';
+import Settings from './components/Settings';
+import ManageSkills from './components/ManageSkills';
+import SkillSearch from './components/SkillSearch';
+import { ThemeProvider } from './context/ThemeContext';
+import Requests from './components/Requests';
+import SkillDetail from './components/SkillDetail';
+import TeachDetail from './components/TeachDetail';
+import StudentProfile from './components/StudentProfile';
+
+/**
+ * HomePage Component
+ * The main landing page with hero, features, and footer
+ */
+const HomePage: React.FC = () => {
+  return (
+    <>
+      <Navbar />
+      <Hero />
+      <Features />
+      <Footer />
+    </>
+  );
+};
+
+/**
+ * Main App Component
+ * Uses React Router to handle navigation between pages
+ */
+const App: React.FC = () => {
+  return (
+    <ThemeProvider>
+      <Router>
+        <div className="app">
+          {/* Define routes for different pages */}
+          <Routes>
+            {/* Home page route */}
+            <Route path="/" element={<HomePage />} />
+            {/* Register page route */}
+            <Route path="/register" element={<RegisterPage />} />
+            {/* Login page route */}
+            <Route path="/login" element={<LoginPage />} />
+            {/* Dashboard page route */}
+            <Route path="/dashboard" element={<Dashboard />} />
+            {/* Messages page route */}
+            <Route path="/messages" element={<Messages />} />
+            {/* Settings page route */}
+            <Route path="/settings" element={<Settings />} />
+            {/* Manage Skills page route */}
+            <Route path="/manage-skills" element={<ManageSkills />} />
+            {/* Skill Search page route */}
+            <Route path="/search" element={<SkillSearch />} />
+            {/* Requests page route */}
+            <Route path="/requests" element={<Requests />} />
+            {/* Skill Detail page route */}
+            <Route path="/skill/:skillId" element={<SkillDetail />} />
+            {/* Teach Detail page route */}
+            <Route path="/teach/:skillId" element={<TeachDetail />} />
+            {/* Student Profile page route */}
+            <Route path="/student/:studentId" element={<StudentProfile />} />
+          </Routes>
+        </div>
+      </Router>
+    </ThemeProvider>
+  );
+};
+
+export default App;
