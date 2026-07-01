@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from './models/User.js';
@@ -9,6 +10,7 @@ import Message from './models/Message.js';
 dotenv.config();
 
 const app = express();
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/campus-skill';
