@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import User from './models/User';
-import Skill from './models/Skill';
+import User from './models/User.js';
+import Skill from './models/Skill.js';
 
 dotenv.config();
 

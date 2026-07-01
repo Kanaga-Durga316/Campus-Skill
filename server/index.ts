@@ -1,10 +1,10 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import User from './models/User';
-import Skill from './models/Skill';
-import ExchangeRequest from './models/ExchangeRequest';
-import Message from './models/Message';
+import User from './models/User.js';
+import Skill from './models/Skill.js';
+import ExchangeRequest from './models/ExchangeRequest.js';
+import Message from './models/Message.js';
 
 dotenv.config();
 
