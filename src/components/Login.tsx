@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { fetchJSON } from '../api';
 import Navbar from './Navbar';
 
 /**
@@ -16,6 +17,8 @@ import Navbar from './Navbar';
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -30,10 +33,35 @@ const LoginPage: React.FC = () => {
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Login submitted:', formData);
-    navigate('/dashboard');
+    setError('');
+
+    if (!formData.email || !formData.password) {
+      setError('Email and password are required');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await fetchJSON('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password
+        })
+      });
+
+      // Save token and user to localStorage
+      localStorage.setItem('token', result.token);
+      localStorage.setItem('user', JSON.stringify(result.user));
+
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -121,7 +149,8 @@ const LoginPage: React.FC = () => {
                           onChange={handleChange}
                           placeholder="you@university.edu"
                           required
-                          className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none"
+                          disabled={loading}
+                          className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none disabled:opacity-50"
                         />
                       </div>
                     </div>
@@ -145,7 +174,8 @@ const LoginPage: React.FC = () => {
                           onChange={handleChange}
                           placeholder="••••••••"
                           required
-                          className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none"
+                          disabled={loading}
+                          className="w-full pl-12 pr-12 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none disabled:opacity-50"
                         />
                         <button
                           type="button"
@@ -174,7 +204,8 @@ const LoginPage: React.FC = () => {
                           name="rememberMe"
                           checked={formData.rememberMe}
                           onChange={handleChange}
-                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" 
+                          disabled={loading}
+                          className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 disabled:opacity-50" 
                         />
                         <span className="ml-2 text-sm text-gray-600">Remember me</span>
                       </label>
@@ -183,12 +214,25 @@ const LoginPage: React.FC = () => {
                       </a>
                     </div>
 
+                    {/* Error Message */}
+                    {error && (
+                      <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+                        <p className="text-red-800 font-medium flex items-center">
+                          <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                          {error}
+                        </p>
+                      </div>
+                    )}
+
                     {/* Login Button */}
                     <button
                       type="submit"
-                      className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-600 hover:to-purple-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/30 active:scale-[0.99]"
+                      disabled={loading}
+                      className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl hover:from-indigo-600 hover:to-purple-700 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/30 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                     >
-                      Sign In
+                      {loading ? 'Signing In...' : 'Sign In'}
                     </button>
                   </form>
 

@@ -13,7 +13,7 @@ const UserSchema = new Schema(
     skills: [{ type: Schema.Types.ObjectId, ref: 'Skill' }],
     location: { type: String }
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { transform: (doc, ret) => { delete ret.passwordHash; return ret; } } }
 );
 
 export default model('User', UserSchema);
