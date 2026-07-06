@@ -100,12 +100,34 @@ app.put('/api/users/:id', authMiddleware, async (req: AuthRequest, res: Response
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
-    const { name, bio, avatarUrl, location } = req.body;
+    const {
+      name,
+      bio,
+      avatarUrl,
+      location,
+      preferredMode,
+      experienceLevel,
+      sessionDurationHours,
+      portfolioLinks,
+      verificationStatus
+    } = req.body;
+
     const user = await User.findByIdAndUpdate(
       req.params.id,
-      { name, bio, avatarUrl, location },
+      {
+        name,
+        bio,
+        avatarUrl,
+        location,
+        preferredMode,
+        experienceLevel,
+        sessionDurationHours,
+        portfolioLinks,
+        verificationStatus
+      },
       { new: true }
     ).select('-passwordHash');
+
 
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
