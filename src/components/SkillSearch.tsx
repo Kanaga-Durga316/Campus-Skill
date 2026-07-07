@@ -40,10 +40,7 @@ const SkillSearch: React.FC = () => {
   const [selectedStudent, setSelectedStudent] = useState<StudentSkill | null>(null);
 
   // Sample user skills (in real app, this would come from context/API)
-  const userTeachingSkills = [
-    { id: '1', title: 'Python Programming' },
-    { id: '2', title: 'Web Development' }
-  ];
+  const [userTeachingSkills, setUserTeachingSkills] = useState<{ id: string; title: string }[]>([]);
 
   // Sample data - students offering skills
   const [studentsData, setStudentsData] = useState<StudentSkill[]>([]);

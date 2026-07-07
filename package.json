@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
-    "server": "tsx server/index.ts",
-    "seed": "tsx server/seed.ts"
+    "server": "tsx server/index.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
