@@ -3,6 +3,15 @@ import Navbar from './Navbar';
 import ExchangeRequestModal, { SkillExchangeRequest } from './ExchangeRequestModal';
 import { fetchJSON } from '../api';
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * SkillSearch Component
  * Allows students to search for skills and find students who offer them
@@ -11,6 +20,8 @@ import { fetchJSON } from '../api';
 // Type for student offering a skill
 interface StudentSkill {
   id: string;
+  ownerId: string;
+  skillId: string;
   studentName: string;
   department: string;
   year: string;
@@ -39,11 +50,14 @@ const SkillSearch: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<StudentSkill | null>(null);
 
-  // Sample user skills (in real app, this would come from context/API)
+  // Current user's teaching skills (for the exchange offer)
   const [userTeachingSkills, setUserTeachingSkills] = useState<{ id: string; title: string }[]>([]);
 
   // Sample data - students offering skills
   const [studentsData, setStudentsData] = useState<StudentSkill[]>([]);
+
+  const storedUser = getStoredUser();
+  const userId: string | undefined = storedUser?._id;
 
   useEffect(() => {
     let mounted = true;
@@ -52,6 +66,8 @@ const SkillSearch: React.FC = () => {
         if (!mounted) return;
         const mapped = skills.map(s => ({
           id: s._id,
+          ownerId: s.owner?._id || s.owner || '',
+          skillId: s._id,
           studentName: s.owner?.name || 'Unknown',
           department: s.owner?.department || '',
           year: s.owner?.year || '',
@@ -70,8 +86,21 @@ const SkillSearch: React.FC = () => {
       .catch(() => {
         // ignore
       });
+
+    // Load the current user's own teaching skills to offer in exchange
+    if (userId) {
+      fetchJSON('/skills')
+        .then((skills: any[]) => {
+          if (!mounted) return;
+          const mine = skills
+            .filter((s: any) => s.owner?._id === userId || s.owner === userId)
+            .map((s: any) => ({ id: s._id, title: s.title }));
+          setUserTeachingSkills(mine);
+        })
+        .catch(() => {});
+    }
     return () => { mounted = false; };
-  }, []);
+  }, [userId]);
 
   // Filter categories
   const categories = ['All', 'Programming', 'Technology', 'Language', 'Music', 'Art & Design', 'Communication', 'Business'];
@@ -108,9 +137,21 @@ const SkillSearch: React.FC = () => {
   };
 
   // Handle modal submit
-  const handleModalSubmit = (request: SkillExchangeRequest) => {
-    console.log('Exchange request sent:', request);
-    alert(`Request sent to ${request.recipientName}! \n\nYou want to learn: ${request.skillWanted}\nYou offer: ${request.skillOffered}`);
+  const handleModalSubmit = async (request: SkillExchangeRequest) => {
+    try {
+      await fetchJSON('/requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          responderId: request.responderId,
+          skillRequestedId: request.skillRequestedId,
+          skillOfferedId: request.skillOfferedId,
+          message: request.message
+        })
+      });
+      alert(`Request sent to ${selectedStudent?.studentName}!`);
+    } catch (err: any) {
+      alert(`Failed to send request: ${err?.message || 'Please try again.'}`);
+    }
   };
 
   return (
@@ -245,6 +286,8 @@ const SkillSearch: React.FC = () => {
         onClose={() => setIsModalOpen(false)}
         recipientName={selectedStudent?.studentName || ''}
         skillWanted={selectedStudent?.skillToTeach || ''}
+        skillWantedId={selectedStudent?.skillId || ''}
+        responderId={selectedStudent?.ownerId || ''}
         recipientSkills={selectedStudent?.skills || []}
         userTeachingSkills={userTeachingSkills}
         onSubmit={handleModalSubmit}

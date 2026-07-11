@@ -11,15 +11,17 @@ interface ExchangeRequestModalProps {
   onClose: () => void;
   recipientName: string;
   skillWanted: string;
+  skillWantedId: string;
+  responderId: string;
   recipientSkills: string[];
   userTeachingSkills: { id: string; title: string }[];
   onSubmit: (request: SkillExchangeRequest) => void;
 }
 
 export interface SkillExchangeRequest {
-  recipientName: string;
-  skillWanted: string;
-  skillOffered: string;
+  skillRequestedId: string;
+  responderId: string;
+  skillOfferedId: string;
   message: string;
 }
 
@@ -31,6 +33,8 @@ const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({
   onClose,
   recipientName,
   skillWanted,
+  skillWantedId,
+  responderId,
   recipientSkills: _recipientSkills,
   userTeachingSkills,
   onSubmit
@@ -58,9 +62,9 @@ const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({
     const selectedSkillData = userTeachingSkills.find(s => s.id === selectedSkill);
     
     const request: SkillExchangeRequest = {
-      recipientName,
-      skillWanted,
-      skillOffered: selectedSkillData?.title || '',
+      skillRequestedId: skillWantedId,
+      responderId,
+      skillOfferedId: selectedSkillData?.id || '',
       message
     };
 

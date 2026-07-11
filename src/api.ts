@@ -2,17 +2,45 @@ const configuredBase = import.meta.env.VITE_API_URL?.replace(/\/$/, '') || '/api
 
 export const API_BASE = configuredBase;
 
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem('token');
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchJSON(path: string, opts: RequestInit = {}) {
   const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-  
-  // Add Content-Type header if body is present
-  if (opts.body && !opts.headers) {
-    opts.headers = { 'Content-Type': 'application/json' };
-  } else if (opts.body && opts.headers && !(opts.headers instanceof Headers)) {
-    opts.headers = { ...opts.headers, 'Content-Type': 'application/json' };
+
+  const headers: Record<string, string> = {};
+  if (opts.headers && !(opts.headers instanceof Headers)) {
+    Object.assign(headers, opts.headers);
   }
-  
-  const res = await fetch(`${API_BASE}${normalizedPath}`, opts);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+
+  // Add Content-Type header if body is present
+  if (opts.body && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  // Auto-attach the auth token when available
+  const token = getToken();
+  if (token && !headers['Authorization'] && !headers['authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE}${normalizedPath}`, { ...opts, headers });
+
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const data = await res.json();
+      if (data?.error) message = data.error;
+    } catch {
+      // ignore non-JSON error bodies
+    }
+    throw new Error(message);
+  }
+
   return res.json();
 }

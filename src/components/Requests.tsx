@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './Navbar';
+import { fetchJSON } from '../api';
 
 /**
  * Requests Component
@@ -20,6 +21,29 @@ interface ExchangeRequest {
   type: 'incoming' | 'outgoing';
 }
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  } catch {
+    return null;
+  }
+};
+
+const formatTime = (date: string | Date): string => {
+  const now = new Date();
+  const then = new Date(date);
+  const diff = now.getTime() - then.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return then.toLocaleDateString();
+};
+
 /**
  * Requests Component
  */
@@ -27,97 +51,109 @@ const Requests: React.FC = () => {
   // State for active tab
   const [activeTab, setActiveTab] = useState<'incoming' | 'outgoing'>('incoming');
 
-  // Sample incoming requests (requests FROM others TO you)
-  const [incomingRequests, setIncomingRequests] = useState<ExchangeRequest[]>([
-    {
-      id: '1',
-      fromName: 'Sarah Williams',
-      fromAvatar: 'S',
-      fromDepartment: 'Business Administration',
-      skillWanted: 'Python Programming',
-      skillOffered: 'Public Speaking',
-      message: 'Hi! I would love to learn Python from you. I can teach you Public Speaking in exchange!',
-      status: 'pending',
-      date: '2 hours ago',
-      type: 'incoming'
-    },
-    {
-      id: '2',
-      fromName: 'Mike Chen',
-      fromAvatar: 'M',
-      fromDepartment: 'Electrical Engineering',
-      skillWanted: 'Web Development',
-      skillOffered: 'Guitar',
-      message: 'Hey! I saw you offer Web Development. I can teach you Guitar!',
-      status: 'accepted',
-      date: '1 day ago',
-      type: 'incoming'
-    },
-    {
-      id: '3',
-      fromName: 'Emily Davis',
-      fromAvatar: 'E',
-      fromDepartment: 'Visual Arts',
-      skillWanted: 'Python Programming',
-      skillOffered: 'Photography',
-      message: 'I would love to exchange skills with you!',
-      status: 'rejected',
-      date: '3 days ago',
-      type: 'incoming'
-    }
-  ]);
+  const [incomingRequests, setIncomingRequests] = useState<ExchangeRequest[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<ExchangeRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Sample outgoing requests (requests YOU sent TO others)
-  const [outgoingRequests, setOutgoingRequests] = useState<ExchangeRequest[]>([
-    {
-      id: '4',
-      fromName: 'David Kim',
-      fromAvatar: 'D',
-      fromDepartment: 'Computer Science',
-      skillWanted: 'Machine Learning',
-      skillOffered: 'Python Programming',
-      message: 'Hi David! I would love to learn Machine Learning from you. I can teach you Python!',
-      status: 'pending',
-      date: '1 hour ago',
-      type: 'outgoing'
-    },
-    {
-      id: '5',
-      fromName: 'Marie Laurent',
-      fromAvatar: 'M',
-      fromDepartment: 'Languages',
-      skillWanted: 'French',
-      skillOffered: 'Web Development',
-      message: 'Hello! I am interested in learning French. Let me know if you are interested!',
-      status: 'accepted',
-      date: '2 days ago',
-      type: 'outgoing'
-    }
-  ]);
+  const storedUser = getStoredUser();
+  const userId: string | undefined = storedUser?._id;
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      if (!userId) {
+        if (mounted) setLoading(false);
+        return;
+      }
+      try {
+        const [requests, users] = await Promise.all([
+          fetchJSON('/requests'),
+          fetchJSON('/users')
+        ]);
+        if (!mounted) return;
+
+        const deptOf = (ref: any): string => {
+          const id = typeof ref === 'object' && ref?._id ? ref._id : ref;
+          const u = (users as any[]).find((x: any) => x._id === id);
+          return u?.department || '';
+        };
+
+        const mapReq = (r: any, type: 'incoming' | 'outgoing'): ExchangeRequest => {
+          const other = type === 'incoming' ? r.requester : r.responder;
+          const otherName = type === 'incoming'
+            ? (other?.name || 'Unknown')
+            : 'You';
+          return {
+            id: r._id,
+            fromName: otherName,
+            fromAvatar: (otherName || '?').charAt(0).toUpperCase(),
+            fromDepartment: deptOf(other),
+            skillWanted: r.skillRequested?.title || 'Unknown Skill',
+            skillOffered: r.skillOffered?.title || '—',
+            message: r.message || '',
+            status: r.status,
+            date: formatTime(r.createdAt),
+            type
+          };
+        };
+
+        const incoming = (requests as any[])
+          .filter((r: any) => {
+            const resp = r.responder?._id || r.responder;
+            return resp === userId;
+          })
+          .map((r: any) => mapReq(r, 'incoming'));
+
+        const outgoing = (requests as any[])
+          .filter((r: any) => {
+            const req = r.requester?._id || r.requester;
+            return req === userId;
+          })
+          .map((r: any) => mapReq(r, 'outgoing'));
+
+        if (!mounted) return;
+        setIncomingRequests(incoming);
+        setOutgoingRequests(outgoing);
+      } catch (err: any) {
+        if (mounted) setError(err?.message || 'Failed to load requests');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, [userId, reloadKey]);
 
   // Handle accept request
-  const handleAccept = (id: string) => {
-    setIncomingRequests(prev => 
-      prev.map(req => 
-        req.id === id ? { ...req, status: 'accepted' } : req
-      )
-    );
-    alert('Request accepted! You can now connect with the student. 🎉');
+  const handleAccept = async (id: string) => {
+    try {
+      await fetchJSON(`/requests/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'accepted' }) });
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to accept request');
+    }
   };
 
   // Handle reject request
-  const handleReject = (id: string) => {
-    setIncomingRequests(prev => 
-      prev.map(req => 
-        req.id === id ? { ...req, status: 'rejected' } : req
-      )
-    );
+  const handleReject = async (id: string) => {
+    try {
+      await fetchJSON(`/requests/${id}`, { method: 'PUT', body: JSON.stringify({ status: 'rejected' }) });
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to reject request');
+    }
   };
 
   // Handle cancel outgoing request
-  const handleCancel = (id: string) => {
-    setOutgoingRequests(prev => prev.filter(req => req.id !== id));
-    alert('Request cancelled.');
+  const handleCancel = async (id: string) => {
+    try {
+      await fetchJSON(`/requests/${id}`, { method: 'DELETE' });
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to cancel request');
+    }
   };
 
   // Get counts
@@ -139,6 +175,16 @@ const Requests: React.FC = () => {
               Manage your incoming and outgoing skill exchange requests
             </p>
           </div>
+
+          {loading && (
+            <div className="text-center text-gray-500">Loading requests...</div>
+          )}
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-800 rounded-xl">
+              {error}
+            </div>
+          )}
 
           {/* Tab Navigation */}
           <div className="flex justify-center mb-8">

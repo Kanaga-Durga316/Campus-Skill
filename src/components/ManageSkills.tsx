@@ -2,6 +2,25 @@ import React, { useState, useEffect } from 'react';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  } catch {
+    return null;
+  }
+};
+
+const mapSkill = (s: any): Skill => ({
+  id: s._id,
+  title: s.title,
+  category: s.category || 'Other',
+  level: (s.level as Skill['level']) || 'All Levels',
+  description: s.description || '',
+  type: 'teach',
+  createdAt: new Date(s.createdAt || Date.now())
+});
+
 /**
  * Skill Management Component
  * Allows students to add and manage skills they can teach and want to learn
@@ -44,27 +63,32 @@ const ManageSkills: React.FC = () => {
   // State for skills (loaded from API)
   const [teachingSkills, setTeachingSkills] = useState<Skill[]>([]);
   const [learningSkills, setLearningSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const storedUser = getStoredUser();
+  const userId: string | undefined = storedUser?._id;
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
     fetchJSON('/skills')
       .then((skills: any[]) => {
         if (!mounted) return;
-        // Map backend skills to ManageSkills.Skill structure
-        const mapped: Skill[] = skills.map(s => ({
-          id: s._id,
-          title: s.title,
-          category: s.category || 'Other',
-          level: s.level || 'All Levels',
-          description: s.description || '',
-          type: 'teach',
-          createdAt: new Date(s.createdAt || Date.now())
-        }));
+        // Only show skills owned by the current user
+        const mapped: Skill[] = skills
+          .filter((s: any) => !userId || s.owner?._id === userId || s.owner === userId)
+          .map(mapSkill);
         setTeachingSkills(mapped);
       })
-      .catch(() => {});
+      .catch((err: any) => {
+        if (mounted) setError(err?.message || 'Failed to load skills');
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
     return () => { mounted = false; };
-  }, []);
+  }, [userId]);
 
   // Form state
   const [activeTab, setActiveTab] = useState<'teach' | 'learn'>('teach');
@@ -82,7 +106,7 @@ const ManageSkills: React.FC = () => {
   };
 
   // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.title.trim()) {
@@ -90,36 +114,61 @@ const ManageSkills: React.FC = () => {
       return;
     }
 
-    const newSkill: Skill = {
-      id: Date.now().toString(),
-      title: formData.title,
-      category: formData.category,
-      level: formData.level as Skill['level'],
-      description: formData.description,
-      type: activeTab,
-      createdAt: new Date()
-    };
-
-    if (activeTab === 'teach') {
-      setTeachingSkills(prev => [...prev, newSkill]);
-    } else {
-      setLearningSkills(prev => [...prev, newSkill]);
+    if (!userId) {
+      setError('Please log in to add skills');
+      return;
     }
 
-    // Reset form
-    setFormData({
-      title: '',
-      category: categories[0],
-      level: levels[0],
-      description: ''
-    });
+    try {
+      const created = await fetchJSON('/skills', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: formData.title.trim(),
+          category: formData.category,
+          level: formData.level,
+          description: formData.description
+        })
+      });
 
-    alert(`${activeTab === 'teach' ? 'Teaching' : 'Learning'} skill added successfully! 🎉`);
+      // Only persist the teaching skill to the backend; learning stays local
+      if (activeTab === 'teach') {
+        setTeachingSkills(prev => [mapSkill(created), ...prev]);
+      } else {
+        const newSkill: Skill = {
+          id: Date.now().toString(),
+          title: formData.title,
+          category: formData.category,
+          level: formData.level as Skill['level'],
+          description: formData.description,
+          type: 'learn',
+          createdAt: new Date()
+        };
+        setLearningSkills(prev => [...prev, newSkill]);
+      }
+
+      // Reset form
+      setFormData({
+        title: '',
+        category: categories[0],
+        level: levels[0],
+        description: ''
+      });
+
+      alert(`${activeTab === 'teach' ? 'Teaching' : 'Learning'} skill added successfully! 🎉`);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add skill');
+    }
   };
 
   // Handle skill deletion
-  const handleDelete = (id: string, type: 'teach' | 'learn') => {
+  const handleDelete = async (id: string, type: 'teach' | 'learn') => {
     if (type === 'teach') {
+      try {
+        await fetchJSON(`/skills/${id}`, { method: 'DELETE' });
+      } catch (err: any) {
+        setError(err?.message || 'Failed to delete skill');
+        return;
+      }
       setTeachingSkills(prev => prev.filter(skill => skill.id !== id));
     } else {
       setLearningSkills(prev => prev.filter(skill => skill.id !== id));
@@ -141,6 +190,16 @@ const ManageSkills: React.FC = () => {
               Add skills you can teach to help others, or skills you want to learn from your peers.
             </p>
           </div>
+
+          {loading && (
+            <div className="text-center text-gray-500">Loading your skills...</div>
+          )}
+
+          {error && (
+            <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl text-red-800">
+              {error}
+            </div>
+          )}
 
           {/* Tab Navigation */}
           <div className="flex justify-center mb-8">
