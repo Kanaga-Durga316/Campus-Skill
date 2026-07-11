@@ -12,7 +12,7 @@ const ExchangeRequestSchema = new Schema(
     message: { type: String },
     scheduledAt: { type: Date }
   },
-  { timestamps: true }
+  { timestamps: true, collection: 'exchangeRequests' }
 );
 
 export default model('ExchangeRequest', ExchangeRequestSchema);

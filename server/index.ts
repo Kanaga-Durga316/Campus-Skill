@@ -15,7 +15,7 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/campus-skill';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/campus_skill';
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('MongoDB connected'))

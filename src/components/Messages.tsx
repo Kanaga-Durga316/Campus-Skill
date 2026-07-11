@@ -1,11 +1,74 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from './Navbar';
+import { fetchJSON } from '../api';
+
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  } catch {
+    return null;
+  }
+};
 
 /**
  * Messages Component
  * Displays student messages and conversations
  */
 const Messages: React.FC = () => {
+  const storedUser = getStoredUser();
+  const userId: string | undefined = storedUser?._id;
+
+  const [users, setUsers] = useState<{ _id: string; name: string }[]>([]);
+  const [recipient, setRecipient] = useState('');
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    fetchJSON('/users')
+      .then((us: any[]) => {
+        if (!mounted) return;
+        const others = us
+          .filter((u: any) => u._id !== userId)
+          .map((u: any) => ({ _id: u._id, name: u.name }));
+        if (!mounted) return;
+        setUsers(others);
+        if (others.length > 0) setRecipient(others[0]._id);
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, [userId]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (!recipient) {
+      setError('Select a recipient');
+      return;
+    }
+    if (!text.trim()) {
+      setError('Please type a message');
+      return;
+    }
+    setSending(true);
+    try {
+      await fetchJSON('/messages', {
+        method: 'POST',
+        body: JSON.stringify({ toUserId: recipient, text: text.trim() })
+      });
+      setSuccess('Message sent! 🎉');
+      setText('');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send message');
+    } finally {
+      setSending(false);
+    }
+  };
+
   // Sample conversation data
   const conversations = [
     {
@@ -56,6 +119,56 @@ const Messages: React.FC = () => {
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Messages 💬</h1>
             <p className="text-gray-600 mt-2">Chat with students about skill exchanges</p>
+          </div>
+
+          {/* Compose new message */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Send a new message ✍️</h2>
+
+            {error && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleSend} className="space-y-3">
+              <select
+                value={recipient}
+                onChange={(e) => setRecipient(e.target.value)}
+                disabled={sending || users.length === 0}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none bg-white"
+              >
+                {users.length === 0 ? (
+                  <option value="">No other users yet</option>
+                ) : (
+                  users.map((u) => (
+                    <option key={u._id} value={u._id}>{u.name}</option>
+                  ))
+                )}
+              </select>
+
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={3}
+                placeholder="Type your message..."
+                disabled={sending}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none resize-none"
+              />
+
+              <button
+                type="submit"
+                disabled={sending || !recipient || !text.trim()}
+                className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-xl hover:shadow-lg transition-all disabled:opacity-60"
+              >
+                {sending ? 'Sending...' : 'Send Message'}
+              </button>
+            </form>
           </div>
 
           {/* Conversations List */}
