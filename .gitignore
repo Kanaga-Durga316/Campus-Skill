@@ -3,4 +3,4 @@
 .env
 .env.local
 .node_modules/bin
-
+uploads/

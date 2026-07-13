@@ -92,7 +92,7 @@ const Hero: React.FC = () => {
             Get Started Free
           </Link>
           <Link
-            to="/dashboard"
+            to="/search"
             className="px-8 py-4 bg-transparent border-2 border-white text-white font-bold rounded-xl hover:bg-white/10 transition-all duration-300 hover:-translate-y-1 text-lg"
           >
             Explore Skills

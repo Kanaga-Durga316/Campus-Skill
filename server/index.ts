@@ -4,16 +4,19 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import User from './models/User.js';
 import Skill from './models/Skill.js';
+import LearnSkill from './models/LearnSkill.js';
 import ExchangeRequest from './models/ExchangeRequest.js';
 import Message from './models/Message.js';
 import { hashPassword, comparePassword, generateToken } from './utils/auth.js';
 import { authMiddleware, AuthRequest } from './utils/middleware.js';
+import { uploadNotes } from './utils/upload.js';
 
 dotenv.config();
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/campus_skill';
 
@@ -169,9 +172,25 @@ app.get('/api/skills/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/skills', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.post('/api/skills', authMiddleware, uploadNotes, async (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, category, tags, level } = req.body;
+    const {
+      title,
+      description,
+      category,
+      tags,
+      level,
+      courseDescription,
+      notes,
+      videoLinks,
+      recordedVideoLinks,
+      liveClassLink,
+      referenceLinks,
+      assignments,
+      githubLink,
+      difficulty,
+      duration
+    } = req.body;
 
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
@@ -183,7 +202,18 @@ app.post('/api/skills', authMiddleware, async (req: AuthRequest, res: Response) 
       category,
       tags: tags || [],
       level,
-      owner: req.userId
+      owner: req.userId,
+      courseDescription,
+      notes,
+      notesFile: req.file ? req.file.filename : undefined,
+      videoLinks: typeof videoLinks === 'string' ? videoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : (videoLinks || []),
+      recordedVideoLinks: typeof recordedVideoLinks === 'string' ? recordedVideoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : (recordedVideoLinks || []),
+      liveClassLink,
+      referenceLinks: typeof referenceLinks === 'string' ? referenceLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : (referenceLinks || []),
+      assignments: typeof assignments === 'string' ? assignments.split(',').map((s: string) => s.trim()).filter(Boolean) : (assignments || []),
+      githubLink,
+      difficulty,
+      duration
     });
 
     await User.findByIdAndUpdate(req.userId, {
@@ -192,8 +222,9 @@ app.post('/api/skills', authMiddleware, async (req: AuthRequest, res: Response) 
 
     const populated = await skill.populate('owner');
     res.status(201).json(populated);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create skill' });
+  } catch (err: any) {
+    console.error('Skill creation error:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to create skill' });
   }
 });
 
@@ -236,6 +267,78 @@ app.delete('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Resp
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete skill' });
+  }
+});
+
+// ===== LEARN-SKILLS ROUTES (separate collection: learnSkills) =====
+app.get('/api/learn-skills', async (req: Request, res: Response) => {
+  try {
+    const skills = await LearnSkill.find().populate('owner').limit(200);
+    res.json(skills);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch learn skills' });
+  }
+});
+
+app.get('/api/learn-skills/:id', async (req: Request, res: Response) => {
+  try {
+    const skill = await LearnSkill.findById(req.params.id).populate('owner');
+    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
+    res.json(skill);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch learn skill' });
+  }
+});
+
+app.post('/api/learn-skills', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const { title, description, category, tags, level } = req.body;
+    if (!title) return res.status(400).json({ error: 'Title is required' });
+
+    const skill = await LearnSkill.create({
+      title,
+      description,
+      category,
+      tags: tags || [],
+      level,
+      owner: req.userId
+    });
+
+    const populated = await skill.populate('owner');
+    res.status(201).json(populated);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to create learn skill' });
+  }
+});
+
+app.put('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await LearnSkill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { title, description, category, tags, level, availability, rating } = req.body;
+    const updated = await LearnSkill.findByIdAndUpdate(
+      req.params.id,
+      { title, description, category, tags, level, availability, rating },
+      { new: true }
+    ).populate('owner');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update learn skill' });
+  }
+});
+
+app.delete('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await LearnSkill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    await LearnSkill.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete learn skill' });
   }
 });
 
@@ -392,6 +495,12 @@ app.put('/api/messages/:id', authMiddleware, async (req: AuthRequest, res: Respo
   } catch (err) {
     res.status(500).json({ error: 'Failed to update message' });
   }
+});
+
+// Central error handler (ensures upload/validation errors return JSON)
+app.use((err: any, _req: Request, res: Response, _next: any) => {
+  console.error('Unhandled error:', err.message);
+  res.status(400).json({ error: err.message || 'Request failed' });
 });
 
 const PORT = process.env.PORT || 5000;

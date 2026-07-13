@@ -105,7 +105,24 @@ const StudentProfile: React.FC = () => {
     } else if (studentId && studentsDatabase[studentId]) {
       setStudent(studentsDatabase[studentId]);
     } else {
-      navigate('/dashboard');
+      // Real student id (e.g. from "Students You May Know") -> load from API
+      fetchJSON(`/users/${studentId}`)
+        .then((u: any) => {
+          if (!mounted) return;
+          setStudent({
+            id: u._id,
+            name: u.name,
+            avatar: u.name ? u.name.charAt(0) : 'U',
+            department: u.department || '',
+            year: u.year || '',
+            skills: u.skills?.map((s: any) => s.title || s) || [],
+            rating: u.rating || 4.5,
+            available: true,
+            bio: u.bio || '',
+            email: u.email || ''
+          });
+        })
+        .catch(() => navigate('/dashboard'));
     }
     return () => { mounted = false; };
   }, [studentId, navigate]);

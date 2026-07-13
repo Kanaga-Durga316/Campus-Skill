@@ -55,6 +55,58 @@ const categories = [
 // Level options
 const levels = ['Beginner', 'Intermediate', 'Advanced', 'All Levels'];
 
+// Difficulty options for learning resources
+const difficulties = ['Beginner', 'Intermediate', 'Advanced'];
+
+/**
+ * RepeatableInput
+ * Renders a list of text inputs the user can add/remove (used for
+ * YouTube links, recorded videos, reference links, assignments).
+ */
+const RepeatableInput: React.FC<{
+  label: string;
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+  type?: string;
+}> = ({ label, values, onChange, placeholder, type = 'text' }) => (
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+    {values.map((value, i) => (
+      <div key={i} className="flex gap-2 mb-2">
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => {
+            const next = [...values];
+            next[i] = e.target.value;
+            onChange(next);
+          }}
+          placeholder={placeholder}
+          className="flex-1 px-4 py-2 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none"
+        />
+        {values.length > 1 && (
+          <button
+            type="button"
+            onClick={() => onChange(values.filter((_, j) => j !== i))}
+            className="px-3 text-red-500 hover:text-red-700"
+            aria-label="Remove"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+    ))}
+    <button
+      type="button"
+      onClick={() => onChange([...values, ''])}
+      className="text-sm text-indigo-600 font-medium hover:underline"
+    >
+      + Add another
+    </button>
+  </div>
+);
+
 /**
  * ManageSkills Component
  * Main component for skill management
@@ -72,10 +124,11 @@ const ManageSkills: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
+
+    // Teach skills (separate "skills" collection)
     fetchJSON('/skills')
       .then((skills: any[]) => {
         if (!mounted) return;
-        // Only show skills owned by the current user
         const mapped: Skill[] = skills
           .filter((s: any) => !userId || s.owner?._id === userId || s.owner === userId)
           .map(mapSkill);
@@ -83,26 +136,88 @@ const ManageSkills: React.FC = () => {
       })
       .catch((err: any) => {
         if (mounted) setError(err?.message || 'Failed to load skills');
+      });
+
+    // Learn skills (separate "learnSkills" collection)
+    fetchJSON('/learn-skills')
+      .then((skills: any[]) => {
+        if (!mounted) return;
+        const mapped: Skill[] = skills
+          .filter((s: any) => !userId || s.owner?._id === userId || s.owner === userId)
+          .map((s: any) => ({
+            id: s._id,
+            title: s.title,
+            category: s.category || 'Other',
+            level: (s.level as Skill['level']) || 'All Levels',
+            description: s.description || '',
+            type: 'learn' as const,
+            createdAt: new Date(s.createdAt || Date.now())
+          }));
+        setLearningSkills(mapped);
+      })
+      .catch((err: any) => {
+        if (mounted) setError(err?.message || 'Failed to load learn skills');
       })
       .finally(() => {
         if (mounted) setLoading(false);
       });
+
     return () => { mounted = false; };
   }, [userId]);
 
-  // Form state
   const [activeTab, setActiveTab] = useState<'teach' | 'learn'>('teach');
+
+  // Form state
   const [formData, setFormData] = useState({
     title: '',
     category: categories[0],
     level: levels[0],
-    description: ''
+    description: '',
+    courseDescription: '',
+    notes: '',
+    liveClassLink: '',
+    githubLink: '',
+    difficulty: 'Beginner',
+    duration: ''
   });
+
+  // Learning-resource list fields (multi-value)
+  const [videoLinks, setVideoLinks] = useState<string[]>(['']);
+  const [recordedVideoLinks, setRecordedVideoLinks] = useState<string[]>(['']);
+  const [referenceLinks, setReferenceLinks] = useState<string[]>(['']);
+  const [assignments, setAssignments] = useState<string[]>(['']);
+
+  // Uploaded notes PDF
+  const [notesFile, setNotesFile] = useState<File | null>(null);
 
   // Handle form input changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNotesFile(e.target.files && e.target.files[0] ? e.target.files[0] : null);
+  };
+
+  const resetResourceFields = () => {
+    setFormData({
+      title: '',
+      category: categories[0],
+      level: levels[0],
+      description: '',
+      courseDescription: '',
+      notes: '',
+      liveClassLink: '',
+      githubLink: '',
+      difficulty: 'Beginner',
+      duration: ''
+    });
+    setVideoLinks(['']);
+    setRecordedVideoLinks(['']);
+    setReferenceLinks(['']);
+    setAssignments(['']);
+    setNotesFile(null);
   };
 
   // Handle form submission
@@ -120,40 +235,53 @@ const ManageSkills: React.FC = () => {
     }
 
     try {
-      const created = await fetchJSON('/skills', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: formData.title.trim(),
-          category: formData.category,
-          level: formData.level,
-          description: formData.description
-        })
-      });
-
-      // Only persist the teaching skill to the backend; learning stays local
       if (activeTab === 'teach') {
+        // Build multipart form so we can attach the notes PDF
+        const fd = new FormData();
+        fd.append('title', formData.title.trim());
+        fd.append('category', formData.category);
+        fd.append('level', formData.level);
+        fd.append('description', formData.description);
+        fd.append('courseDescription', formData.courseDescription);
+        fd.append('notes', formData.notes);
+        fd.append('liveClassLink', formData.liveClassLink);
+        fd.append('githubLink', formData.githubLink);
+        fd.append('difficulty', formData.difficulty);
+        fd.append('duration', formData.duration);
+        videoLinks.filter(l => l.trim()).forEach(l => fd.append('videoLinks', l.trim()));
+        recordedVideoLinks.filter(l => l.trim()).forEach(l => fd.append('recordedVideoLinks', l.trim()));
+        referenceLinks.filter(l => l.trim()).forEach(l => fd.append('referenceLinks', l.trim()));
+        assignments.filter(l => l.trim()).forEach(l => fd.append('assignments', l.trim()));
+        if (notesFile) fd.append('notesFile', notesFile);
+
+        const created = await fetchJSON('/skills', { method: 'POST', body: fd });
         setTeachingSkills(prev => [mapSkill(created), ...prev]);
       } else {
-        const newSkill: Skill = {
-          id: Date.now().toString(),
-          title: formData.title,
-          category: formData.category,
-          level: formData.level as Skill['level'],
-          description: formData.description,
-          type: 'learn',
-          createdAt: new Date()
-        };
-        setLearningSkills(prev => [...prev, newSkill]);
+        // Persist to the separate learnSkills collection
+        const created = await fetchJSON('/learn-skills', {
+          method: 'POST',
+          body: JSON.stringify({
+            title: formData.title.trim(),
+            category: formData.category,
+            level: formData.level,
+            description: formData.description
+          })
+        });
+        setLearningSkills(prev => [
+          {
+            id: created._id,
+            title: created.title,
+            category: created.category || 'Other',
+            level: (created.level as Skill['level']) || 'All Levels',
+            description: created.description || '',
+            type: 'learn',
+            createdAt: new Date(created.createdAt || Date.now())
+          },
+          ...prev
+        ]);
       }
 
-      // Reset form
-      setFormData({
-        title: '',
-        category: categories[0],
-        level: levels[0],
-        description: ''
-      });
-
+      resetResourceFields();
       alert(`${activeTab === 'teach' ? 'Teaching' : 'Learning'} skill added successfully! 🎉`);
     } catch (err: any) {
       setError(err?.message || 'Failed to add skill');
@@ -171,6 +299,12 @@ const ManageSkills: React.FC = () => {
       }
       setTeachingSkills(prev => prev.filter(skill => skill.id !== id));
     } else {
+      try {
+        await fetchJSON(`/learn-skills/${id}`, { method: 'DELETE' });
+      } catch (err: any) {
+        setError(err?.message || 'Failed to delete learn skill');
+        return;
+      }
       setLearningSkills(prev => prev.filter(skill => skill.id !== id));
     }
   };
@@ -306,6 +440,115 @@ const ManageSkills: React.FC = () => {
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none resize-none"
                     />
                   </div>
+
+                  {/* Learning Resources (teachers only) */}
+                  {activeTab === 'teach' && (
+                    <div className="pt-6 mt-2 border-t border-gray-100">
+                      <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center space-x-2">
+                        <span>📚</span>
+                        <span>Learning Resources</span>
+                      </h3>
+                      <div className="space-y-4">
+                        {/* Course Description */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Course Description</label>
+                          <textarea
+                            name="courseDescription"
+                            rows={3}
+                            value={formData.courseDescription}
+                            onChange={handleChange}
+                            placeholder="Describe the course..."
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none resize-none"
+                          />
+                        </div>
+
+                        {/* Notes (text) */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Notes (text)</label>
+                          <textarea
+                            name="notes"
+                            rows={2}
+                            value={formData.notes}
+                            onChange={handleChange}
+                            placeholder="Optional text notes..."
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none resize-none"
+                          />
+                        </div>
+
+                        {/* Notes PDF upload */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Notes Upload (PDF)</label>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={handleFileChange}
+                            className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+                          />
+                          {notesFile && <p className="text-xs text-gray-500 mt-1">Selected: {notesFile.name}</p>}
+                        </div>
+
+                        <RepeatableInput label="YouTube Video Links" values={videoLinks} onChange={setVideoLinks} placeholder="https://youtube.com/watch?v=..." />
+                        <RepeatableInput label="Recorded Video Links" values={recordedVideoLinks} onChange={setRecordedVideoLinks} placeholder="https://..." />
+
+                        {/* Live Class Link */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Live Class Link (Meet / Zoom / Teams)</label>
+                          <input
+                            type="url"
+                            name="liveClassLink"
+                            value={formData.liveClassLink}
+                            onChange={handleChange}
+                            placeholder="https://meet.google.com/..."
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none"
+                          />
+                        </div>
+
+                        <RepeatableInput label="Reference Website Links" values={referenceLinks} onChange={setReferenceLinks} placeholder="https://..." />
+                        <RepeatableInput label="Assignments" values={assignments} onChange={setAssignments} placeholder="e.g. Build a to-do app" />
+
+                        {/* GitHub Repository */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">GitHub Repository (optional)</label>
+                          <input
+                            type="url"
+                            name="githubLink"
+                            value={formData.githubLink}
+                            onChange={handleChange}
+                            placeholder="https://github.com/..."
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none"
+                          />
+                        </div>
+
+                        {/* Difficulty Level */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Difficulty Level</label>
+                          <select
+                            name="difficulty"
+                            value={formData.difficulty}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none bg-white"
+                          >
+                            {difficulties.map(d => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Course Duration */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Estimated Course Duration</label>
+                          <input
+                            type="text"
+                            name="duration"
+                            value={formData.duration}
+                            onChange={handleChange}
+                            placeholder="e.g. 3 hours"
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Submit Button */}
                   <button

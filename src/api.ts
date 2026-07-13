@@ -18,8 +18,14 @@ export async function fetchJSON(path: string, opts: RequestInit = {}) {
     Object.assign(headers, opts.headers);
   }
 
-  // Add Content-Type header if body is present
-  if (opts.body && !headers['Content-Type'] && !headers['content-type']) {
+  // Add Content-Type header if body is present (but not for FormData, where the
+  // browser must set the multipart boundary itself)
+  if (
+    opts.body &&
+    !(opts.body instanceof FormData) &&
+    !headers['Content-Type'] &&
+    !headers['content-type']
+  ) {
     headers['Content-Type'] = 'application/json';
   }
 

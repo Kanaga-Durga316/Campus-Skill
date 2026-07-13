@@ -25,10 +25,25 @@ interface SkillDetail {
   emoji: string;
   description: string;
   instructor: string;
+  instructorDept?: string;
+  instructorYear?: string;
+  instructorAvatar?: string;
   rating: number;
   learners: number;
   totalDuration: string;
   lessons: Lesson[];
+  // Learning resources
+  courseDescription?: string;
+  notes?: string;
+  notesFile?: string;
+  videoLinks?: string[];
+  recordedVideoLinks?: string[];
+  liveClassLink?: string;
+  referenceLinks?: string[];
+  assignments?: string[];
+  githubLink?: string;
+  difficulty?: string;
+  duration?: string;
 }
 
 // Sample skill details data (in a real app, this would come from an API)
@@ -75,6 +90,20 @@ const skillsDatabase: Record<string, SkillDetail> = {
   }
 };
 
+// Convert a YouTube watch/short/youtu.be URL into an embeddable URL
+const youtubeEmbed = (url: string): string => {
+  try {
+    const u = new URL(url);
+    let id = '';
+    if (u.hostname.includes('youtu.be')) id = u.pathname.slice(1);
+    else if (u.searchParams.get('v')) id = u.searchParams.get('v') as string;
+    else id = u.pathname.split('/').pop() || '';
+    return id ? `https://www.youtube.com/embed/${id}` : url;
+  } catch {
+    return url;
+  }
+};
+
 const SkillDetail: React.FC = () => {
   const { skillId } = useParams<{ skillId: string }>();
   const navigate = useNavigate();
@@ -96,10 +125,24 @@ const SkillDetail: React.FC = () => {
           emoji: '📘',
           description: s.description || '',
           instructor: s.owner?.name || 'Instructor',
+          instructorDept: s.owner?.department || '',
+          instructorYear: s.owner?.year || '',
+          instructorAvatar: s.owner?.name ? s.owner.name.charAt(0) : 'I',
           rating: s.rating || 4.5,
           learners: s.learners || 0,
-          totalDuration: '—',
-          lessons: []
+          totalDuration: s.duration || '—',
+          lessons: [],
+          courseDescription: s.courseDescription || '',
+          notes: s.notes || '',
+          notesFile: s.notesFile || '',
+          videoLinks: s.videoLinks || [],
+          recordedVideoLinks: s.recordedVideoLinks || [],
+          liveClassLink: s.liveClassLink || '',
+          referenceLinks: s.referenceLinks || [],
+          assignments: s.assignments || [],
+          githubLink: s.githubLink || '',
+          difficulty: s.difficulty || s.level || 'All Levels',
+          duration: s.duration || ''
         };
         setSkill(mapped);
       })
@@ -194,6 +237,144 @@ const SkillDetail: React.FC = () => {
                 <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{completedLessons} of {skill.lessons.length} lessons completed • {skill.totalDuration} total</p>
               </div>
             </div>
+          </div>
+
+          {/* Learning Resources */}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6 mb-6">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4 flex items-center">
+              <span className="mr-2">📚</span> Teacher &amp; Learning Resources
+            </h2>
+
+            {/* Teacher Information */}
+            <div className="flex items-center space-x-4 mb-6 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
+              <div className="w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+                {skill.instructorAvatar}
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white">{skill.instructor}</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {[skill.instructorDept, skill.instructorYear].filter(Boolean).join(' • ')}
+                </p>
+              </div>
+              <div className="ml-auto text-right text-xs text-gray-500">
+                <p>Difficulty: {skill.difficulty}</p>
+                {skill.duration && <p>Duration: {skill.duration}</p>}
+              </div>
+            </div>
+
+            {/* Course Description */}
+            {skill.courseDescription && (
+              <section className="mb-6">
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">📖 Course Description</h3>
+                <p className="text-slate-600 dark:text-slate-300">{skill.courseDescription}</p>
+              </section>
+            )}
+
+            {/* Notes */}
+            {(skill.notes || skill.notesFile) && (
+              <section className="mb-6">
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">📝 Notes</h3>
+                {skill.notes && <p className="text-slate-600 dark:text-slate-300 mb-2 whitespace-pre-line">{skill.notes}</p>}
+                {skill.notesFile && (
+                  <a
+                    href={`/uploads/${skill.notesFile}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors"
+                  >
+                    📄 Download Notes (PDF)
+                  </a>
+                )}
+              </section>
+            )}
+
+            {/* Video Lectures (embedded YouTube) */}
+            {skill.videoLinks && skill.videoLinks.filter(Boolean).length > 0 && (
+              <section className="mb-6">
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">🎬 Video Lectures</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {skill.videoLinks.filter(Boolean).map((url, i) => (
+                    <div key={i} className="rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                      <iframe
+                        src={youtubeEmbed(url)}
+                        title={`video-${i}`}
+                        className="w-full h-56"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      ></iframe>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Recorded Sessions */}
+            {skill.recordedVideoLinks && skill.recordedVideoLinks.filter(Boolean).length > 0 && (
+              <section className="mb-6">
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">🎞️ Recorded Sessions</h3>
+                <ul className="space-y-1">
+                  {skill.recordedVideoLinks.filter(Boolean).map((url, i) => (
+                    <li key={i}>
+                      <a href={url} target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline break-all">
+                        {url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* Live Class Button */}
+            {skill.liveClassLink && (
+              <section className="mb-6">
+                <a
+                  href={skill.liveClassLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center w-full py-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold rounded-xl hover:shadow-lg hover:scale-[1.01] transition-all"
+                >
+                  🔴 Join Live Class
+                </a>
+              </section>
+            )}
+
+            {/* Reference Links */}
+            {skill.referenceLinks && skill.referenceLinks.filter(Boolean).length > 0 && (
+              <section className="mb-6">
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">🔗 Reference Links</h3>
+                <ul className="space-y-1">
+                  {skill.referenceLinks.filter(Boolean).map((url, i) => (
+                    <li key={i}>
+                      <a href={url} target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline break-all">
+                        {url}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* Assignments */}
+            {skill.assignments && skill.assignments.filter(Boolean).length > 0 && (
+              <section className="mb-6">
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">📝 Assignments</h3>
+                <ol className="list-decimal list-inside space-y-1 text-slate-600 dark:text-slate-300">
+                  {skill.assignments.filter(Boolean).map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ol>
+              </section>
+            )}
+
+            {/* GitHub */}
+            {skill.githubLink && (
+              <section>
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-2">💻 GitHub Repository</h3>
+                <a href={skill.githubLink} target="_blank" rel="noreferrer" className="text-indigo-600 dark:text-indigo-400 hover:underline break-all">
+                  {skill.githubLink}
+                </a>
+              </section>
+            )}
           </div>
 
           {/* Lessons Grid */}
