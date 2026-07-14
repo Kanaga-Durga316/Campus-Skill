@@ -10,6 +10,7 @@ import Message from './models/Message.js';
 import { hashPassword, comparePassword, generateToken } from './utils/auth.js';
 import { authMiddleware, AuthRequest } from './utils/middleware.js';
 import { uploadNotes } from './utils/upload.js';
+import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
 
 dotenv.config();
 
@@ -593,10 +594,11 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
 
     const {
       status, message, scheduledAt,
-      progress, quizScore, quizTotal, assignmentStatus, assignmentText, feedback
+      completedModules, assignmentText, answers, liveClassAttended,
+      assignmentStatus, feedback
     } = req.body;
 
-    // Status transitions
+    // Status transitions (teacher accepts/rejects; student cancels)
     if (status !== undefined) {
       if ((status === 'accepted' || status === 'rejected') && !isResponder) {
         return res.status(403).json({ error: 'Only the teacher can accept or reject' });
@@ -605,31 +607,71 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
         return res.status(403).json({ error: 'Only the student can cancel' });
       }
       request.status = status;
-      if (status === 'completed') request.completedAt = new Date();
+      if (status === 'completed' && !request.completedAt) request.completedAt = new Date();
     }
 
     if (message !== undefined) request.message = message;
     if (scheduledAt !== undefined) request.scheduledAt = scheduledAt;
 
-    // Teacher-only tracking fields (progress + assignment status)
-    if (progress !== undefined || assignmentStatus !== undefined) {
-      if (!isResponder) return res.status(403).json({ error: 'Only the teacher can update progress/assignment status' });
-      if (progress !== undefined) request.progress = progress;
-      if (assignmentStatus !== undefined) request.assignmentStatus = assignmentStatus;
+    // Teacher-only: grade the assignment + read feedback (teachers monitor only)
+    if (assignmentStatus !== undefined) {
+      if (!isResponder) return res.status(403).json({ error: 'Only the teacher can update assignment status' });
+      request.assignmentStatus = assignmentStatus;
+    }
+    if (feedback !== undefined) {
+      if (!isRequester) return res.status(403).json({ error: 'Only the student can submit feedback' });
+      if (feedback.rating !== undefined) request.feedback.rating = feedback.rating;
+      if (feedback.comment !== undefined) request.feedback.comment = feedback.comment;
     }
 
-    // Quiz result: student submits their score, teacher may also set/override it
-    if (quizScore !== undefined) request.quizScore = quizScore;
-    if (quizTotal !== undefined) request.quizTotal = quizTotal;
+    // Student-only learning actions -> all progress is auto-calculated afterwards
+    if (completedModules !== undefined || assignmentText !== undefined || answers !== undefined || liveClassAttended !== undefined) {
+      if (!isRequester) return res.status(403).json({ error: 'Only the student can update their learning progress' });
 
-    // Student-only submission + feedback
-    if (assignmentText !== undefined || feedback !== undefined) {
-      if (!isRequester) return res.status(403).json({ error: 'Only the student can submit assignments or feedback' });
-      if (assignmentText !== undefined) request.assignmentText = assignmentText;
-      if (feedback !== undefined) {
-        if (feedback.rating !== undefined) request.feedback.rating = feedback.rating;
-        if (feedback.comment !== undefined) request.feedback.comment = feedback.comment;
+      if (completedModules !== undefined) {
+        const arr = Array.isArray(completedModules) ? completedModules.map(String) : [];
+        request.completedModules = Array.from(new Set(arr));
       }
+      if (assignmentText !== undefined) {
+        request.assignmentText = assignmentText;
+        if (assignmentText && assignmentText.trim().length > 0) {
+          request.assignmentStatus = 'submitted';
+        }
+      }
+      if (liveClassAttended !== undefined) {
+        request.liveClassAttended = !!liveClassAttended;
+      }
+      if (answers !== undefined) {
+        const result = gradeQuiz(answers, request.skillRequested);
+        request.quizScore = result.score;
+        request.quizTotal = result.total;
+        request.quizStatus = result.status;
+      }
+
+      // AUTO-CALCULATE progress (backend only)
+      request.progress = computeProgress({
+        completedModules: request.completedModules,
+        assignmentStatus: request.assignmentStatus,
+        quizStatus: request.quizStatus,
+        liveClassAttended: request.liveClassAttended,
+        skill: request.skillRequested
+      });
+
+      // AUTO-COMPLETE when every milestone is done
+      if (request.progress >= 100 && request.status !== 'completed') {
+        request.status = 'completed';
+        request.completedAt = new Date();
+      }
+    }
+
+    // Certificate is issued whenever the course is completed (auto or by teacher)
+    if (request.status === 'completed' && !(request.certificate && request.certificate.issued)) {
+      const skillId = request.skillRequested?._id?.toString() || '';
+      request.certificate = {
+        issued: true,
+        certificateId: generateCertificateId(skillId, request._id.toString()),
+        issuedAt: new Date()
+      };
     }
 
     await request.save();

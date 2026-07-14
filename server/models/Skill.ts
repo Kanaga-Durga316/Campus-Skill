@@ -54,6 +54,7 @@ const SkillSchema = new Schema(
 
     // ===== Course structure (new) =====
     published: { type: Boolean, default: false },             // teacher publishes the course
+    thumbnail: { type: String },                               // optional course thumbnail URL
     modules: [ModuleSchema]                                    // unlimited modules
   },
   { timestamps: true }
