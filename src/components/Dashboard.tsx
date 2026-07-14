@@ -40,6 +40,26 @@ interface Request {
   time: string;
 }
 
+interface MyLearningItem {
+  id: string;
+  courseTitle: string;
+  teacherName: string;
+  progress: number;
+  status: string;
+}
+
+interface TeacherStudentItem {
+  id: string;
+  studentId: string;
+  studentName: string;
+  skillName: string;
+  status: string;
+  progress: number;
+  quizScore: number;
+  quizTotal: number;
+  assignmentStatus: string;
+}
+
 const getStoredUser = () => {
   try {
     const u = localStorage.getItem('user');
@@ -140,6 +160,47 @@ const Dashboard: React.FC = () => {
 
   const [mySkills, setMySkills] = useState<Skill[]>([]);
   const [skillsToLearn, setSkillsToLearn] = useState<Skill[]>([]);
+  const [myLearning, setMyLearning] = useState<MyLearningItem[]>([]);
+  const [teachingRequests, setTeachingRequests] = useState<TeacherStudentItem[]>([]);
+
+  const reloadTeaching = async () => {
+    try {
+      const tr = (await fetchJSON('/requests/teacher').catch(() => [])) as any[];
+      setTeachingRequests(
+        tr.map((r: any) => ({
+          id: r._id,
+          studentId: r.requester?._id || '',
+          studentName: r.requester?.name || 'Unknown Student',
+          skillName: r.skillRequested?.title || 'Unknown Skill',
+          status: r.status,
+          progress: r.progress || 0,
+          quizScore: r.quizScore || 0,
+          quizTotal: r.quizTotal || 0,
+          assignmentStatus: r.assignmentStatus || 'not_started'
+        }))
+      );
+    } catch (err) {
+      // ignore
+    }
+  };
+
+  const acceptRequest = async (id: string) => {
+    try {
+      await fetchJSON('/requests/' + id, { method: 'PUT', body: JSON.stringify({ status: 'accepted' }) });
+      await reloadTeaching();
+    } catch (err: any) {
+      setError(err.message || 'Failed to accept');
+    }
+  };
+
+  const rejectRequest = async (id: string) => {
+    try {
+      await fetchJSON('/requests/' + id, { method: 'PUT', body: JSON.stringify({ status: 'rejected' }) });
+      await reloadTeaching();
+    } catch (err: any) {
+      setError(err.message || 'Failed to reject');
+    }
+  };
   const [suggestedStudents, setSuggestedStudents] = useState<Student[]>([]);
   const [recentRequests, setRecentRequests] = useState<Request[]>([]);
   const [loading, setLoading] = useState(true);
@@ -155,10 +216,12 @@ const Dashboard: React.FC = () => {
       }
 
       try {
-        const [skills, users, requests, currentProfile] = await Promise.all([
+        const [skills, users, requests, enrollments, teacherRequests, currentProfile] = await Promise.all([
           fetchJSON('/skills'),
           fetchJSON('/users'),
           fetchJSON('/requests'),
+          fetchJSON('/requests/enrollments').catch(() => []),
+          fetchJSON('/requests/teacher').catch(() => []),
           storedUser._id ? fetchJSON(`/users/${storedUser._id}`).catch(() => null) : Promise.resolve(null)
         ]);
 
@@ -211,6 +274,28 @@ const Dashboard: React.FC = () => {
 
         setMySkills(mySkillsList);
         setSkillsToLearn([]);
+        setMyLearning(
+          (enrollments as any[]).map((r: any) => ({
+            id: r._id,
+            courseTitle: r.skillRequested?.title || 'Unknown Course',
+            teacherName: r.responder?.name || 'Unknown Teacher',
+            progress: r.progress || 0,
+            status: r.status
+          }))
+        );
+        setTeachingRequests(
+          (teacherRequests as any[]).map((r: any) => ({
+            id: r._id,
+            studentId: r.requester?._id || '',
+            studentName: r.requester?.name || 'Unknown Student',
+            skillName: r.skillRequested?.title || 'Unknown Skill',
+            status: r.status,
+            progress: r.progress || 0,
+            quizScore: r.quizScore || 0,
+            quizTotal: r.quizTotal || 0,
+            assignmentStatus: r.assignmentStatus || 'not_started'
+          }))
+        );
         setSuggestedStudents(otherUsers);
         setRecentRequests(myRequests);
 
@@ -295,7 +380,20 @@ const Dashboard: React.FC = () => {
               <YourSkillsSection skills={mySkills} onManage={() => navigate('/manage-skills')} onViewDetails={(skillId) => navigate(`/teach/${skillId}`)} />
 
               {/* Skills You Want to Learn */}
+              {myLearning.length > 0 && (
+                <MyLearningSection items={myLearning} onOpenCourse={(id) => navigate('/learn/' + id)} />
+              )}
               <SkillsToLearnSection skills={skillsToLearn} onContinue={(skillId) => navigate(`/skill/${skillId}`)} />
+
+              {teachingRequests.length > 0 && (
+                <TeacherStudentsSection
+                  items={teachingRequests}
+                  onAccept={(id) => acceptRequest(id)}
+                  onReject={(id) => rejectRequest(id)}
+                  onViewProgress={(sid) => navigate('/student/' + sid)}
+                  onSendMessage={() => navigate('/messages')}
+                />
+              )}
 
               {/* Suggested Students */}
               <SuggestedStudentsSection students={suggestedStudents} onViewAll={() => navigate('/search')} onViewProfile={(studentId) => navigate(`/student/${studentId}`)} />
@@ -443,6 +541,111 @@ const SkillsToLearnSection: React.FC<{ skills: Skill[]; onContinue?: (skillId: s
             className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
           >
             Continue
+          </button>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+/**
+ * TeacherStudentsSection Component
+ * Teacher's view of students learning their skills (accept/reject + track progress)
+ */
+const statusBadge = (status: string): string => {
+  const map: Record<string, string> = {
+    open: 'bg-yellow-100 text-yellow-700',
+    pending: 'bg-yellow-100 text-yellow-700',
+    accepted: 'bg-green-100 text-green-700',
+    completed: 'bg-blue-100 text-blue-700',
+    rejected: 'bg-red-100 text-red-700',
+    cancelled: 'bg-gray-100 text-gray-700'
+  };
+  return map[status] || 'bg-gray-100 text-gray-700';
+};
+
+const TeacherStudentsSection: React.FC<{
+  items: TeacherStudentItem[];
+  onAccept: (id: string) => void;
+  onReject: (id: string) => void;
+  onViewProgress: (studentId: string) => void;
+  onSendMessage: (studentId: string) => void;
+}> = ({ items, onAccept, onReject, onViewProgress, onSendMessage }) => (
+  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+    <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">👥 Students Learning My Skills</h2>
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">{item.studentName}</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">📚 {item.skillName}</p>
+            </div>
+            <span className={'px-2 py-0.5 rounded-full text-xs font-medium ' + statusBadge(item.status)}>{item.status}</span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 mt-3 text-center">
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Progress</p>
+              <p className="font-bold text-slate-900 dark:text-white">{item.progress}%</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Quiz</p>
+              <p className="font-bold text-slate-900 dark:text-white">{item.quizScore}/{item.quizTotal}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Assignment</p>
+              <p className="font-bold text-slate-900 dark:text-white capitalize">{item.assignmentStatus.replace('_', ' ')}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2 mt-3">
+            {item.status === 'open' || item.status === 'pending' ? (
+              <>
+                <button onClick={() => onAccept(item.id)} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700">Accept</button>
+                <button onClick={() => onReject(item.id)} className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600">Reject</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => onViewProgress(item.studentId)} className="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100">View Progress</button>
+                <button onClick={() => onSendMessage(item.studentId)} className="px-3 py-1.5 text-sm bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200">Send Message</button>
+              </>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+/**
+ * MyLearningSection Component
+ * Shows courses the student is enrolled in (auto-appears after a teacher accepts a request)
+ */
+const MyLearningSection: React.FC<{ items: MyLearningItem[]; onOpenCourse: (requestId: string) => void }> = ({ items, onOpenCourse }) => (
+  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">🎓 My Learning</h2>
+    </div>
+
+    <div className="space-y-3">
+      {items.map((item) => (
+        <div key={item.id} className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
+          <div>
+            <h3 className="font-semibold text-slate-900 dark:text-white">{item.courseTitle}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">👨‍🏫 {item.teacherName}</p>
+            <div className="flex items-center mt-1 max-w-[200px]">
+              <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full" style={{ width: item.progress + '%' }}></div>
+              </div>
+              <span className="text-xs text-slate-500 ml-2">{item.progress}%</span>
+            </div>
+          </div>
+          <button
+            onClick={() => onOpenCourse(item.id)}
+            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            Open Course
           </button>
         </div>
       ))}

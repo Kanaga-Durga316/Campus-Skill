@@ -29,7 +29,7 @@ const Features: React.FC = () => {
       step: 1,
       icon: '📝',
       title: 'Create Your Profile',
-      description: 'Sign up and list the skills you can teach and want to learn'
+      description: 'Sign up and list the skills you can teach and are learning'
     },
     {
       step: 2,

@@ -145,7 +145,7 @@ const ExchangeRequestModal: React.FC<ExchangeRequestModalProps> = ({
             <div className="space-y-4">
               <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-4">
                 <p className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">
-                  You want to learn:
+                  You are learning:
                 </p>
                 <p className="text-lg font-bold text-gray-900 dark:text-white mt-1">
                   {skillWanted}

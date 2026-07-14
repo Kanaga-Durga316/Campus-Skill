@@ -15,6 +15,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import Requests from './components/Requests';
 import SkillDetail from './components/SkillDetail';
 import TeachDetail from './components/TeachDetail';
+import CourseManagement from './components/CourseManagement';
+import StudentCourse from './components/StudentCourse';
 import StudentProfile from './components/StudentProfile';
 
 /**
@@ -65,6 +67,10 @@ const App: React.FC = () => {
             <Route path="/skill/:skillId" element={<SkillDetail />} />
             {/* Teach Detail page route */}
             <Route path="/teach/:skillId" element={<TeachDetail />} />
+            {/* Course Management page route (teacher, owner only) */}
+            <Route path="/course/:skillId" element={<CourseManagement />} />
+            {/* Student Course view route (enrolled student, read-only) */}
+            <Route path="/learn/:requestId" element={<StudentCourse />} />
             {/* Student Profile page route */}
             <Route path="/student/:studentId" element={<StudentProfile />} />
           </Routes>

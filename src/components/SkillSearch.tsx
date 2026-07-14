@@ -166,7 +166,7 @@ const SkillSearch: React.FC = () => {
               Find Skills to Learn 🔍
             </h1>
             <p className="text-gray-600 max-w-2xl mx-auto">
-              Search for skills you want to learn and discover students who can teach you.
+              Search for skills you are learning and discover students who can teach you.
             </p>
           </div>
 

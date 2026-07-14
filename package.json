@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -n server,client -c green,cyan \"npm:server\" \"npm:client\"",
+    "client": "vite",
     "build": "node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "server": "tsx server/index.ts"
@@ -28,6 +29,7 @@
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.27",
+    "concurrently": "^9.2.4",
     "postcss": "^8.5.8",
     "tailwindcss": "^3.4.19",
     "ts-node-dev": "^2.0.0",

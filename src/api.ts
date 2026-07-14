@@ -39,12 +39,9 @@ export async function fetchJSON(path: string, opts: RequestInit = {}) {
   try {
     res = await fetch(`${API_BASE}${normalizedPath}`, { ...opts, headers });
   } catch (networkErr) {
-    const isLocalhost =
-      API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
-    const hint = isLocalhost
-      ? ' — is the backend server running? Start it with: npm run server'
-      : '';
-    throw new Error(`Cannot reach the server (failed to fetch)${hint}`);
+    throw new Error(
+      'Cannot reach the server (failed to fetch) — is the backend running? Start everything with: npm run dev'
+    );
   }
 
   if (!res.ok) {

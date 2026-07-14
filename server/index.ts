@@ -270,6 +270,169 @@ app.delete('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Resp
   }
 });
 
+// ===== COURSE MANAGEMENT ROUTES (owner-only) =====
+// Helper: normalise a value into a trimmed, non-empty string array
+const toArr = (v: any): string[] =>
+  typeof v === 'string'
+    ? v.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : Array.isArray(v)
+      ? v.map((s: any) => String(s).trim()).filter(Boolean)
+      : [];
+
+// Add a module to a course
+app.post('/api/skills/:id/modules', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { title, description } = req.body;
+    if (!title) return res.status(400).json({ error: 'Module title is required' });
+
+    skill.modules.push({ title, description });
+    await skill.save();
+    res.status(201).json(skill);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to add module' });
+  }
+});
+
+// Update a module
+app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = skill.modules.id(req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const { title, description, notes, liveClassLink, videoLinks, recordedVideoLinks, assignments } = req.body;
+    if (title !== undefined) module.title = title;
+    if (description !== undefined) module.description = description;
+    if (notes !== undefined) module.notes = notes;
+    if (liveClassLink !== undefined) module.liveClassLink = liveClassLink;
+    if (videoLinks !== undefined) module.videoLinks = toArr(videoLinks);
+    if (recordedVideoLinks !== undefined) module.recordedVideoLinks = toArr(recordedVideoLinks);
+    if (assignments !== undefined) module.assignments = toArr(assignments);
+    if (req.file) module.notesFile = req.file.filename;
+
+    await skill.save();
+    res.json(skill);
+  } catch (err: any) {
+    console.error('Module update error:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to update module' });
+  }
+});
+
+// Delete a module
+app.delete('/api/skills/:id/modules/:moduleId', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = skill.modules.id(req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    skill.modules.pull({ _id: req.params.moduleId } as any);
+    await skill.save();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete module' });
+  }
+});
+
+// Add a quiz to a module
+app.post('/api/skills/:id/modules/:moduleId/quizzes', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = skill.modules.id(req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const { question, options, correctIndex } = req.body;
+    if (!question) return res.status(400).json({ error: 'Question is required' });
+
+    module.quizzes.push({
+      question,
+      options: toArr(options),
+      correctIndex: typeof correctIndex === 'number' ? correctIndex : 0
+    });
+    await skill.save();
+    res.status(201).json(skill);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to add quiz' });
+  }
+});
+
+// Update a quiz
+app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = skill.modules.id(req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+    const quiz = module.quizzes.id(req.params.quizId);
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    const { question, options, correctIndex } = req.body;
+    if (question !== undefined) quiz.question = question;
+    if (options !== undefined) quiz.options = toArr(options);
+    if (correctIndex !== undefined) quiz.correctIndex = correctIndex;
+
+    await skill.save();
+    res.json(skill);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update quiz' });
+  }
+});
+
+// Delete a quiz
+app.delete('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const module = skill.modules.id(req.params.moduleId);
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+    const quiz = module.quizzes.id(req.params.quizId);
+    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+
+    module.quizzes.pull({ _id: req.params.quizId } as any);
+    await skill.save();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete quiz' });
+  }
+});
+
+// Publish / unpublish a course (and update course-level metadata)
+app.patch('/api/skills/:id/publish', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const skill = await Skill.findById(req.params.id);
+    if (!skill) return res.status(404).json({ error: 'Skill not found' });
+    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+
+    const { published, courseDescription, difficulty, duration, liveClassLink } = req.body;
+    if (published !== undefined) skill.published = published;
+    if (courseDescription !== undefined) skill.courseDescription = courseDescription;
+    if (difficulty !== undefined) skill.difficulty = difficulty;
+    if (duration !== undefined) skill.duration = duration;
+    if (liveClassLink !== undefined) skill.liveClassLink = liveClassLink;
+
+    await skill.save();
+    res.json(skill);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to publish course' });
+  }
+});
+
 // ===== LEARN-SKILLS ROUTES (separate collection: learnSkills) =====
 app.get('/api/learn-skills', async (req: Request, res: Response) => {
   try {
@@ -354,6 +517,36 @@ app.get('/api/requests', async (req: Request, res: Response) => {
   }
 });
 
+// Student's learning enrollments ("My Learning"): accepted requests where I am the requester
+app.get('/api/requests/enrollments', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const requests = await ExchangeRequest.find({
+      requester: req.userId,
+      status: { $in: ['accepted', 'completed'] }
+    })
+      .populate('requester responder skillRequested skillOffered')
+      .sort({ updatedAt: -1 });
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch enrollments' });
+  }
+});
+
+// Teacher's requests ("Students Learning My Skills"): all requests where I am the responder
+// (pending requests to accept/reject + accepted enrollments to track progress)
+app.get('/api/requests/teacher', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const requests = await ExchangeRequest.find({
+      responder: req.userId
+    })
+      .populate('requester responder skillRequested skillOffered')
+      .sort({ updatedAt: -1 });
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch teaching enrollments' });
+  }
+});
+
 app.get('/api/requests/:id', async (req: Request, res: Response) => {
   try {
     const request = await ExchangeRequest.findById(req.params.id)
@@ -390,24 +583,59 @@ app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response
 
 app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const { status, message, scheduledAt } = req.body;
-
-    const request = await ExchangeRequest.findById(req.params.id);
+    const request = await ExchangeRequest.findById(req.params.id)
+      .populate('requester responder skillRequested skillOffered');
     if (!request) return res.status(404).json({ error: 'Request not found' });
 
-    if (request.responder.toString() !== req.userId && request.requester.toString() !== req.userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    const isRequester = request.requester._id.toString() === req.userId;
+    const isResponder = request.responder._id.toString() === req.userId;
+    if (!isRequester && !isResponder) return res.status(403).json({ error: 'Unauthorized' });
+
+    const {
+      status, message, scheduledAt,
+      progress, quizScore, quizTotal, assignmentStatus, assignmentText, feedback
+    } = req.body;
+
+    // Status transitions
+    if (status !== undefined) {
+      if ((status === 'accepted' || status === 'rejected') && !isResponder) {
+        return res.status(403).json({ error: 'Only the teacher can accept or reject' });
+      }
+      if (status === 'cancelled' && !isRequester) {
+        return res.status(403).json({ error: 'Only the student can cancel' });
+      }
+      request.status = status;
+      if (status === 'completed') request.completedAt = new Date();
     }
 
-    const updated = await ExchangeRequest.findByIdAndUpdate(
-      req.params.id,
-      { status, message, scheduledAt },
-      { new: true }
-    ).populate('requester responder skillRequested skillOffered');
+    if (message !== undefined) request.message = message;
+    if (scheduledAt !== undefined) request.scheduledAt = scheduledAt;
 
-    res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update request' });
+    // Teacher-only tracking fields (progress + assignment status)
+    if (progress !== undefined || assignmentStatus !== undefined) {
+      if (!isResponder) return res.status(403).json({ error: 'Only the teacher can update progress/assignment status' });
+      if (progress !== undefined) request.progress = progress;
+      if (assignmentStatus !== undefined) request.assignmentStatus = assignmentStatus;
+    }
+
+    // Quiz result: student submits their score, teacher may also set/override it
+    if (quizScore !== undefined) request.quizScore = quizScore;
+    if (quizTotal !== undefined) request.quizTotal = quizTotal;
+
+    // Student-only submission + feedback
+    if (assignmentText !== undefined || feedback !== undefined) {
+      if (!isRequester) return res.status(403).json({ error: 'Only the student can submit assignments or feedback' });
+      if (assignmentText !== undefined) request.assignmentText = assignmentText;
+      if (feedback !== undefined) {
+        if (feedback.rating !== undefined) request.feedback.rating = feedback.rating;
+        if (feedback.comment !== undefined) request.feedback.comment = feedback.comment;
+      }
+    }
+
+    await request.save();
+    res.json(request);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to update request' });
   }
 });
 

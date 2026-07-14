@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
 
@@ -112,6 +113,7 @@ const RepeatableInput: React.FC<{
  * Main component for skill management
  */
 const ManageSkills: React.FC = () => {
+  const navigate = useNavigate();
   // State for skills (loaded from API)
   const [teachingSkills, setTeachingSkills] = useState<Skill[]>([]);
   const [learningSkills, setLearningSkills] = useState<Skill[]>([]);
@@ -321,7 +323,7 @@ const ManageSkills: React.FC = () => {
               Manage Your Skills 🎯
             </h1>
             <p className="text-gray-600 max-w-2xl mx-auto">
-              Add skills you can teach to help others, or skills you want to learn from your peers.
+              Add skills you can teach to help others, or skills you are learning from your peers.
             </p>
           </div>
 
@@ -356,7 +358,7 @@ const ManageSkills: React.FC = () => {
                     : 'text-gray-600 hover:bg-gray-50'
                 }`}
               >
-                📚 Skills I Want to Learn
+                📚 Skills I Am Learning
               </button>
             </div>
           </div>
@@ -436,7 +438,7 @@ const ManageSkills: React.FC = () => {
                       onChange={handleChange}
                       placeholder={activeTab === 'teach' 
                         ? 'Describe what you can teach...' 
-                        : 'Describe what you want to learn...'}
+                        : 'Describe what you are learning...'}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none resize-none"
                     />
                   </div>
@@ -582,6 +584,7 @@ const ManageSkills: React.FC = () => {
                         key={skill.id} 
                         skill={skill} 
                         onDelete={() => handleDelete(skill.id, 'teach')}
+                        onOpen={() => navigate('/course/' + skill.id)}
                       />
                     ))}
                   </div>
@@ -614,7 +617,7 @@ const ManageSkills: React.FC = () => {
                 ) : (
                   <EmptyState 
                     emoji="📚" 
-                    message="You haven't added any skills you want to learn yet." 
+                    message="You haven't added any skills you are learning yet." 
                   />
                 )}
               </div>
@@ -633,15 +636,18 @@ const ManageSkills: React.FC = () => {
 const SkillCard: React.FC<{
   skill: Skill;
   onDelete: () => void;
-}> = ({ skill, onDelete }) => {
+  onOpen?: () => void;
+}> = ({ skill, onDelete, onOpen }) => {
   const isTeaching = skill.type === 'teach';
   
   return (
-    <div className={`bg-white rounded-2xl p-5 border-2 transition-all duration-300 hover:shadow-lg group ${
-      isTeaching 
-        ? 'border-indigo-100 hover:border-indigo-300' 
-        : 'border-amber-100 hover:border-amber-300'
-    }`}>
+    <div
+      onClick={isTeaching && onOpen ? onOpen : undefined}
+      className={`bg-white rounded-2xl p-5 border-2 transition-all duration-300 hover:shadow-lg group ${
+        isTeaching 
+          ? 'border-indigo-100 hover:border-indigo-300' 
+          : 'border-amber-100 hover:border-amber-300'
+      } ${isTeaching && onOpen ? 'cursor-pointer' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className={`px-3 py-1 rounded-full text-xs font-semibold ${

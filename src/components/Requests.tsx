@@ -330,7 +330,7 @@ const RequestCard: React.FC<{
             {/* Skill Wanted */}
             <div className="flex-1 min-w-[200px]">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
-                {type === 'incoming' ? 'They want to learn:' : 'You want to learn:'}
+                {type === 'incoming' ? 'They want to learn:' : 'You are learning:'}
               </p>
               <p className="text-lg font-bold text-indigo-600">
                 {request.skillWanted}
