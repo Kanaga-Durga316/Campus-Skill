@@ -14,6 +14,7 @@ import SkillSearch from './components/SkillSearch';
 import { ThemeProvider } from './context/ThemeContext';
 import Requests from './components/Requests';
 import SkillDetail from './components/SkillDetail';
+import LearnSkillDetail from './components/LearnSkillDetail';
 import TeachDetail from './components/TeachDetail';
 import CourseManagement from './components/CourseManagement';
 import StudentCourse from './components/StudentCourse';
@@ -65,6 +66,8 @@ const App: React.FC = () => {
             <Route path="/requests" element={<Requests />} />
             {/* Skill Detail page route */}
             <Route path="/skill/:skillId" element={<SkillDetail />} />
+            {/* Learn Skill Detail page route (skills the user wants to learn) */}
+            <Route path="/learn-skill/:skillId" element={<LearnSkillDetail />} />
             {/* Teach Detail page route */}
             <Route path="/teach/:skillId" element={<TeachDetail />} />
             {/* Course Management page route (teacher, owner only) */}

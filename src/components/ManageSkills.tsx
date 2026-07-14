@@ -144,17 +144,15 @@ const ManageSkills: React.FC = () => {
     fetchJSON('/learn-skills')
       .then((skills: any[]) => {
         if (!mounted) return;
-        const mapped: Skill[] = skills
-          .filter((s: any) => !userId || s.owner?._id === userId || s.owner === userId)
-          .map((s: any) => ({
-            id: s._id,
-            title: s.title,
-            category: s.category || 'Other',
-            level: (s.level as Skill['level']) || 'All Levels',
-            description: s.description || '',
-            type: 'learn' as const,
-            createdAt: new Date(s.createdAt || Date.now())
-          }));
+        const mapped: Skill[] = skills.map((s: any) => ({
+          id: s._id,
+          title: s.title,
+          category: s.category || 'Other',
+          level: (s.level as Skill['level']) || 'All Levels',
+          description: s.description || '',
+          type: 'learn' as const,
+          createdAt: new Date(s.createdAt || Date.now())
+        }));
         setLearningSkills(mapped);
       })
       .catch((err: any) => {
@@ -611,6 +609,7 @@ const ManageSkills: React.FC = () => {
                         key={skill.id} 
                         skill={skill} 
                         onDelete={() => handleDelete(skill.id, 'learn')}
+                        onOpen={() => navigate('/learn-skill/' + skill.id)}
                       />
                     ))}
                   </div>
@@ -642,12 +641,12 @@ const SkillCard: React.FC<{
   
   return (
     <div
-      onClick={isTeaching && onOpen ? onOpen : undefined}
+      onClick={onOpen ? onOpen : undefined}
       className={`bg-white rounded-2xl p-5 border-2 transition-all duration-300 hover:shadow-lg group ${
         isTeaching 
           ? 'border-indigo-100 hover:border-indigo-300' 
           : 'border-amber-100 hover:border-amber-300'
-      } ${isTeaching && onOpen ? 'cursor-pointer' : ''}`}>
+      } ${onOpen ? 'cursor-pointer' : ''}`}>
       {/* Header */}
       <div className="flex items-start justify-between mb-3">
         <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -658,7 +657,7 @@ const SkillCard: React.FC<{
           {skill.category}
         </div>
         <button
-          onClick={onDelete}
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
           className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
           title="Delete skill"
         >
