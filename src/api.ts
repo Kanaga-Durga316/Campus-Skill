@@ -35,7 +35,17 @@ export async function fetchJSON(path: string, opts: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}${normalizedPath}`, { ...opts, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${normalizedPath}`, { ...opts, headers });
+  } catch (networkErr) {
+    const isLocalhost =
+      API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
+    const hint = isLocalhost
+      ? ' — is the backend server running? Start it with: npm run server'
+      : '';
+    throw new Error(`Cannot reach the server (failed to fetch)${hint}`);
+  }
 
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
