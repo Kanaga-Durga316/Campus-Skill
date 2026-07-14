@@ -28,20 +28,17 @@ const Navbar: React.FC = () => {
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-b border-gray-100 dark:border-gray-700 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 md:h-20">
-          {/* Logo - Student-friendly branding */}
-          <Link to="/" className="flex items-center space-x-2 group" aria-label="Campus Skill Exchange Platform - Home">
+          {/* Logo + Title */}
+          <Link to="/" className="flex items-center gap-3" aria-label="Campus Skill Exchange Platform - Home">
             <img
               src={logo}
               alt="Campus Skill Exchange Platform"
-              className="h-8 w-auto md:h-10 lg:h-12 object-contain group-hover:scale-105 transition-transform duration-300"
+              className="h-9 w-9 md:h-[42px] md:w-[42px] lg:h-12 lg:w-12 rounded-full object-contain transition-transform duration-300 hover:scale-105 cursor-pointer"
               decoding="async"
             />
-            <div className="flex flex-col">
-              <span className="text-lg md:text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent dark:from-indigo-400 dark:to-purple-400">
-                SkillX
-              </span>
-              <span className="text-[10px] text-gray-400 -mt-1 hidden sm:block">Campus Skill Exchange Platform</span>
-            </div>
+            <span className="min-w-0 truncate whitespace-nowrap text-sm sm:text-base md:text-lg lg:text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent dark:from-indigo-400 dark:to-purple-400">
+              Campus Skill Exchange Platform
+            </span>
           </Link>
 
           {/* Desktop Navigation */}
