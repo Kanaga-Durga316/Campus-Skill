@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import logo from '../assets/logo/skillx-logo.png';
 // theme switch removed
 
 /**
@@ -28,15 +29,18 @@ const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 md:h-20">
           {/* Logo - Student-friendly branding */}
-          <Link to="/" className="flex items-center space-x-2 group">
-            <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-105">
-              <span className="text-white font-bold text-xl md:text-2xl">S</span>
-            </div>
+          <Link to="/" className="flex items-center space-x-2 group" aria-label="Campus Skill Exchange Platform - Home">
+            <img
+              src={logo}
+              alt="Campus Skill Exchange Platform"
+              className="h-8 w-auto md:h-10 lg:h-12 object-contain group-hover:scale-105 transition-transform duration-300"
+              decoding="async"
+            />
             <div className="flex flex-col">
               <span className="text-lg md:text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent dark:from-indigo-400 dark:to-purple-400">
                 SkillX
               </span>
-              <span className="text-[10px] text-gray-400 -mt-1 hidden sm:block">Campus Exchange</span>
+              <span className="text-[10px] text-gray-400 -mt-1 hidden sm:block">Campus Skill Exchange Platform</span>
             </div>
           </Link>
 

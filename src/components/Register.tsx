@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchJSON } from '../api';
 import Navbar from './Navbar';
+import logo from '../assets/logo/skillx-logo.png';
 
 /**
  * RegisterPage Component - Enhanced Modern Design
@@ -91,7 +92,13 @@ const RegisterPage: React.FC = () => {
               <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/2"></div>
               
-              <div className="relative z-10">
+              <div className="relative z-10 flex flex-col items-center">
+                <img
+                  src={logo}
+                  alt="Campus Skill Exchange Platform"
+                  className="h-14 w-auto object-contain mb-4"
+                  decoding="async"
+                />
                 <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">
                   Join SkillX 🚀
                 </h1>

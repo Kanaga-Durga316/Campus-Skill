@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import logo from '../assets/logo/skillx-logo.png';
 
 /**
  * Footer Component - Modern & Clean Design
@@ -20,9 +21,12 @@ const Footer: React.FC = () => {
           {/* Brand Column */}
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center space-x-2 mb-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-xl">S</span>
-              </div>
+              <img
+                src={logo}
+                alt="Campus Skill Exchange Platform"
+                className="h-10 w-auto object-contain"
+                decoding="async"
+              />
               <span className="text-xl font-bold text-white">SkillX</span>
             </div>
             <p className="text-gray-300 text-sm mb-4 max-w-md">

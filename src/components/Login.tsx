@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { fetchJSON } from '../api';
 import Navbar from './Navbar';
+import logo from '../assets/logo/skillx-logo.png';
 
 /**
  * LoginPage Component - Enhanced Modern Design
@@ -84,9 +85,12 @@ const LoginPage: React.FC = () => {
                 {/* Content */}
                 <div className="relative z-10">
                   <div className="flex items-center space-x-3 mb-8">
-                    <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                      <span className="text-white font-bold text-2xl">S</span>
-                    </div>
+                    <img
+                      src={logo}
+                      alt="Campus Skill Exchange Platform"
+                      className="h-12 w-auto object-contain"
+                      decoding="async"
+                    />
                     <span className="text-white font-bold text-2xl">SkillX</span>
                   </div>
                   
