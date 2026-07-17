@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n server,client -c green,cyan \"npm:server\" \"npm:client\"",
+    "dev": "concurrently -n server,client -c green,cyan \"npm:server\" \"npm:dev\"",
     "client": "vite",
     "build": "node ./node_modules/typescript/bin/tsc && node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",

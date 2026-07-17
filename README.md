@@ -13,10 +13,11 @@ This repository contains:
 ```bash
 npm run server
 ```
+(Or start both backend + frontend together with `npm run dev`.)
 
 ### Environment variables
 Create a `.env` file (at repo root) with:
-- `MONGODB_URI` (optional, default: `mongodb://127.0.0.1:27017/campus-skill`)
+- `MONGODB_URI` (optional, default: `mongodb://localhost:27017/campus_skill`)
 - `JWT_SECRET` (optional, default: `your-secret-key-change-in-production`)
 - `PORT` (optional, default: `5000`)
 
@@ -25,6 +26,8 @@ Create a `.env` file (at repo root) with:
 ```bash
 npm run dev
 ```
+This starts the backend (`npm run server`) and the Vite frontend together.
+To run the frontend alone: `npm run client` (or `npm run build` + `npm run preview`).
 
 ## Notes on legacy backend
 There is an older Express/Mongoose JS backend under `campus-skill-backend/`.
