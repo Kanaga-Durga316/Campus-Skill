@@ -1,34 +1,27 @@
-import mongoose from 'mongoose';
+// NOTE: This is now a plain TypeScript interface (no database).
+// The backend serves in-memory mock data. Re-introduce a real DB later
+// by mapping these shapes back to your persistence layer.
 
-const { Schema, model } = mongoose;
+export interface User {
+  _id: string;
+  name: string;
+  email: string;
+  passwordHash?: string;
+  role: 'student' | 'teacher';
+  bio?: string;
+  avatarUrl?: string;
+  location?: string;
+  skills?: string[];
+  preferredMode?: 'online' | 'offline' | 'hybrid';
+  experienceLevel?: 'beginner' | 'intermediate' | 'advanced';
+  sessionDurationHours?: number;
+  portfolioLinks?: string[];
+  verificationStatus?: 'unverified' | 'pending' | 'verified';
+  createdAt?: string;
+  updatedAt?: string;
+}
 
-const UserSchema = new Schema(
-  {
-    name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    passwordHash: { type: String, required: true },
-    role: { type: String, enum: ['student', 'teacher'], default: 'student' },
-    bio: { type: String },
-    avatarUrl: { type: String },
-    skills: [{ type: Schema.Types.ObjectId, ref: 'Skill' }],
-    location: { type: String },
-
-    // ===== Added profile fields =====
-    preferredMode: { type: String, default: 'online' }, // e.g. online/offline/hybrid
-    experienceLevel: { type: String, default: 'beginner' }, // e.g. beginner/intermediate/advanced
-    sessionDurationHours: { type: Number, default: 1 }, // store as hours
-    portfolioLinks: { type: [String], default: [] }, // list of URLs
-    verificationStatus: {
-      type: String,
-      enum: ['unverified', 'pending', 'verified'],
-      default: 'unverified'
-    }
-  },
-  {
-    timestamps: true,
-    toJSON: { transform: (doc, ret) => { delete ret.passwordHash; return ret; } }
-  }
-);
-
-
-export default model('User', UserSchema);
+export function sanitizeUser(u: User) {
+  const { passwordHash, ...rest } = u;
+  return rest;
+}

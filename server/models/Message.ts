@@ -1,16 +1,13 @@
-import mongoose from 'mongoose';
+// NOTE: Plain TypeScript types (no database). The backend serves
+// in-memory mock data. Restore a real persistence layer later.
 
-const { Schema, model } = mongoose;
-
-const MessageSchema = new Schema(
-  {
-    from: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    to: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    requestRef: { type: Schema.Types.ObjectId, ref: 'ExchangeRequest' },
-    text: { type: String, required: true },
-    read: { type: Boolean, default: false }
-  },
-  { timestamps: true }
-);
-
-export default model('Message', MessageSchema);
+export interface Message {
+  _id: string;
+  from: string;
+  to: string;
+  requestRef?: string;
+  text: string;
+  read: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
