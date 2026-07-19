@@ -305,7 +305,7 @@ app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, async 
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
     if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId);
+    const module = skill.modules.id(req.params.moduleId as string);
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     const { title, description, notes, liveClassLink, videoLinks, recordedVideoLinks, assignments } = req.body;
@@ -333,7 +333,7 @@ app.delete('/api/skills/:id/modules/:moduleId', authMiddleware, async (req: Auth
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
     if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId);
+    const module = skill.modules.id(req.params.moduleId as string);
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     skill.modules.pull({ _id: req.params.moduleId } as any);
@@ -351,7 +351,7 @@ app.post('/api/skills/:id/modules/:moduleId/quizzes', authMiddleware, async (req
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
     if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId);
+    const module = skill.modules.id(req.params.moduleId as string);
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     const { question, options, correctIndex } = req.body;
@@ -376,9 +376,9 @@ app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, asy
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
     if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId);
+    const module = skill.modules.id(req.params.moduleId as string);
     if (!module) return res.status(404).json({ error: 'Module not found' });
-    const quiz = module.quizzes.id(req.params.quizId);
+    const quiz = module.quizzes.id(req.params.quizId as string);
     if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
 
     const { question, options, correctIndex } = req.body;
@@ -400,9 +400,9 @@ app.delete('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, 
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
     if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId);
+    const module = skill.modules.id(req.params.moduleId as string);
     if (!module) return res.status(404).json({ error: 'Module not found' });
-    const quiz = module.quizzes.id(req.params.quizId);
+    const quiz = module.quizzes.id(req.params.quizId as string);
     if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
 
     module.quizzes.pull({ _id: req.params.quizId } as any);

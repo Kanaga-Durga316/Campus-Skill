@@ -1,9 +1,6 @@
-// NOTE: This is now a plain TypeScript interface (no database).
-// The backend serves in-memory mock data. Re-introduce a real DB later
-// by mapping these shapes back to your persistence layer.
+import mongoose, { Schema, Document } from 'mongoose';
 
-export interface User {
-  _id: string;
+export interface IUser extends Document {
   name: string;
   email: string;
   passwordHash?: string;
@@ -11,17 +8,33 @@ export interface User {
   bio?: string;
   avatarUrl?: string;
   location?: string;
-  skills?: string[];
+  skills?: mongoose.Types.ObjectId[];
   preferredMode?: 'online' | 'offline' | 'hybrid';
   experienceLevel?: 'beginner' | 'intermediate' | 'advanced';
   sessionDurationHours?: number;
   portfolioLinks?: string[];
   verificationStatus?: 'unverified' | 'pending' | 'verified';
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-export function sanitizeUser(u: User) {
-  const { passwordHash, ...rest } = u;
-  return rest;
-}
+const UserSchema = new Schema<IUser>(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true, unique: true, lowercase: true },
+    passwordHash: { type: String },
+    role: { type: String, enum: ['student', 'teacher'], default: 'student' },
+    bio: { type: String },
+    avatarUrl: { type: String },
+    location: { type: String },
+    skills: [{ type: Schema.Types.ObjectId, ref: 'Skill' }],
+    preferredMode: { type: String, enum: ['online', 'offline', 'hybrid'] },
+    experienceLevel: { type: String, enum: ['beginner', 'intermediate', 'advanced'] },
+    sessionDurationHours: { type: Number },
+    portfolioLinks: [{ type: String }],
+    verificationStatus: { type: String, enum: ['unverified', 'pending', 'verified'], default: 'unverified' },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model<IUser>('User', UserSchema);

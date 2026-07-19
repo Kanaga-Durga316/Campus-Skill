@@ -1,15 +1,14 @@
-// NOTE: Plain TypeScript types (no database). The backend serves
-// in-memory mock data. Restore Mongoose here when adding a real DB.
+import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export interface Quiz {
-  _id: string;
+export interface IQuiz {
+  _id?: mongoose.Types.ObjectId;
   question: string;
   options: string[];
   correctIndex: number;
 }
 
-export interface Module {
-  _id: string;
+export interface IModule {
+  _id?: mongoose.Types.ObjectId;
   title: string;
   description?: string;
   notes?: string;
@@ -18,16 +17,15 @@ export interface Module {
   recordedVideoLinks?: string[];
   liveClassLink?: string;
   assignments?: string[];
-  quizzes?: Quiz[];
+  quizzes?: Types.DocumentArray<IQuiz & Document>;
 }
 
-export interface Skill {
-  _id: string;
+export interface ISkill extends Document {
   title: string;
   description?: string;
   category?: string;
   tags?: string[];
-  owner?: string | UserRef;
+  owner?: mongoose.Types.ObjectId;
   level?: string;
   availability?: boolean;
   rating?: number;
@@ -44,15 +42,55 @@ export interface Skill {
   duration?: string;
   published?: boolean;
   thumbnail?: string;
-  modules?: Module[];
-  createdAt?: string;
-  updatedAt?: string;
+  modules?: Types.DocumentArray<IModule & Document>;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
-export interface UserRef {
-  _id: string;
-  name: string;
-  email: string;
-}
+const QuizSchema = new Schema<IQuiz>({
+  question: { type: String, required: true },
+  options: [{ type: String }],
+  correctIndex: { type: Number, default: 0 },
+});
 
-import type { User } from './User.js';
+const ModuleSchema = new Schema<IModule>({
+  title: { type: String, required: true },
+  description: { type: String },
+  notes: { type: String },
+  notesFile: { type: String },
+  videoLinks: [{ type: String }],
+  recordedVideoLinks: [{ type: String }],
+  liveClassLink: { type: String },
+  assignments: [{ type: String }],
+  quizzes: [QuizSchema],
+});
+
+const SkillSchema = new Schema<ISkill>(
+  {
+    title: { type: String, required: true },
+    description: { type: String },
+    category: { type: String },
+    tags: [{ type: String }],
+    owner: { type: Schema.Types.ObjectId, ref: 'User' },
+    level: { type: String },
+    availability: { type: Boolean },
+    rating: { type: Number },
+    courseDescription: { type: String },
+    notes: { type: String },
+    notesFile: { type: String },
+    videoLinks: [{ type: String }],
+    recordedVideoLinks: [{ type: String }],
+    liveClassLink: { type: String },
+    referenceLinks: [{ type: String }],
+    assignments: [{ type: String }],
+    githubLink: { type: String },
+    difficulty: { type: String, enum: ['Beginner', 'Intermediate', 'Advanced'] },
+    duration: { type: String },
+    published: { type: Boolean, default: false },
+    thumbnail: { type: String },
+    modules: [ModuleSchema],
+  },
+  { timestamps: true }
+);
+
+export default mongoose.model<ISkill>('Skill', SkillSchema);

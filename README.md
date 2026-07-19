@@ -29,7 +29,7 @@ npm run dev
 This starts the backend (`npm run server`) and the Vite frontend together.
 To run the frontend alone: `npm run client` (or `npm run build` + `npm run preview`).
 
-## Notes on legacy backend
-There is an older Express/Mongoose JS backend under `campus-skill-backend/`.
-It is **not** wired into the main app and is kept only for reference.
+## Notes
+The backend (`server/`) and frontend (`src/`) are wired together via the Vite dev
+proxy (`/api`, `/uploads` → `http://localhost:5000`). No separate legacy backend exists.
 
