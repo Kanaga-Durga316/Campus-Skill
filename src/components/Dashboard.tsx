@@ -162,6 +162,7 @@ const Dashboard: React.FC = () => {
   const [skillsToLearn, setSkillsToLearn] = useState<Skill[]>([]);
   const [myLearning, setMyLearning] = useState<MyLearningItem[]>([]);
   const [teachingRequests, setTeachingRequests] = useState<TeacherStudentItem[]>([]);
+  const [learnSkillRequestMap, setLearnSkillRequestMap] = useState<Record<string, string>>({});
 
   const reloadTeaching = async () => {
     try {
@@ -216,13 +217,14 @@ const Dashboard: React.FC = () => {
       }
 
       try {
-        const [skills, users, requests, enrollments, teacherRequests, currentProfile] = await Promise.all([
+        const [skills, users, requests, enrollments, teacherRequests, currentProfile, learnSkillsRaw] = await Promise.all([
           fetchJSON('/skills'),
           fetchJSON('/users'),
           fetchJSON('/requests'),
           fetchJSON('/requests/enrollments').catch(() => []),
           fetchJSON('/requests/teacher').catch(() => []),
-          storedUser._id ? fetchJSON(`/users/${storedUser._id}`).catch(() => null) : Promise.resolve(null)
+          storedUser._id ? fetchJSON(`/users/${storedUser._id}`).catch(() => null) : Promise.resolve(null),
+          fetchJSON('/learn-skills').catch(() => [])
         ]);
 
         if (!mounted) return;
@@ -272,8 +274,28 @@ const Dashboard: React.FC = () => {
             time: formatTime(r.createdAt)
           }));
 
+        const myLearnList: Skill[] = (learnSkillsRaw as any[])
+          .filter((s: any) => s.owner?._id === userId || s.owner === userId)
+          .map((s: any) => ({
+            id: s._id,
+            title: s.title,
+            category: s.category || 'Other',
+            level: (s.level as Skill['level']) || 'All Levels',
+            emoji: getEmoji(s.category || 'Other'),
+            learners: 0,
+            rating: s.rating || 0
+          }));
+
+        const requestMap: Record<string, string> = {};
+        (requests as any[]).forEach((r: any) => {
+          if (r.requester?._id === userId && r.skillOffered?._id && ['accepted', 'completed'].includes(r.status)) {
+            requestMap[r.skillOffered._id] = r._id;
+          }
+        });
+
         setMySkills(mySkillsList);
-        setSkillsToLearn([]);
+        setSkillsToLearn(myLearnList);
+        setLearnSkillRequestMap(requestMap);
         setMyLearning(
           (enrollments as any[]).map((r: any) => ({
             id: r._id,
@@ -312,7 +334,7 @@ const Dashboard: React.FC = () => {
           year: String(profile?.year || storedUser.year || ''),
           joinDate: storedUser.createdAt ? new Date(storedUser.createdAt).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '',
           skillsTeaching: mySkillsList.length,
-          skillsLearning: 0,
+          skillsLearning: myLearnList.length,
           rating: parseFloat(avgRating),
           preferredMode: profile?.preferredMode || 'online',
           experienceLevel: profile?.experienceLevel || 'beginner',
@@ -377,13 +399,13 @@ const Dashboard: React.FC = () => {
             {/* Left Column - 2/3 width */}
             <div className="lg:col-span-2 space-y-6">
               {/* Your Skills Section */}
-              <YourSkillsSection skills={mySkills} onManage={() => navigate('/manage-skills')} onViewDetails={(skillId) => navigate(`/teach/${skillId}`)} />
+              <YourSkillsSection skills={mySkills} onManage={() => navigate('/manage-skills')} onViewDetails={(skillId) => navigate(`/course/${skillId}`)} />
 
-              {/* Skills You Want to Learn */}
+              {/* Skills You Are Learning */}
               {myLearning.length > 0 && (
                 <MyLearningSection items={myLearning} onOpenCourse={(id) => navigate('/learn/' + id)} />
               )}
-              <SkillsToLearnSection skills={skillsToLearn} onContinue={(skillId) => navigate(`/skill/${skillId}`)} />
+              <SkillsToLearnSection skills={skillsToLearn} learnSkillRequestMap={learnSkillRequestMap} onContinue={(skillId) => navigate(`/skill/${skillId}`)} />
 
               {teachingRequests.length > 0 && (
                 <TeacherStudentsSection
@@ -520,33 +542,43 @@ const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onVie
  * SkillsToLearnSection Component
  * Displays skills user wants to learn
  */
-const SkillsToLearnSection: React.FC<{ skills: Skill[]; onContinue?: (skillId: string) => void }> = ({ skills, onContinue }) => (
-  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">📚 Skills You Want to Learn</h2>
-    </div>
+const SkillsToLearnSection: React.FC<{ skills: Skill[]; learnSkillRequestMap?: Record<string, string>; onContinue?: (skillId: string) => void }> = ({ skills, learnSkillRequestMap, onContinue }) => {
+  const navigate = useNavigate();
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">📚 Skills You Are Learning</h2>
+      </div>
 
-    <div className="space-y-3">
-      {skills.map((skill) => (
-        <div key={skill.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800">
-          <div className="flex items-center space-x-3">
-            <span className="text-2xl">{skill.emoji}</span>
-            <div>
-              <h3 className="font-semibold text-slate-900 dark:text-white">{skill.title}</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{skill.category} • {skill.level}</p>
+      <div className="space-y-3">
+        {skills.map((skill) => (
+          <div key={skill.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800">
+            <div className="flex items-center space-x-3">
+              <span className="text-2xl">{skill.emoji}</span>
+              <div>
+                <h3 className="font-semibold text-slate-900 dark:text-white">{skill.title}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{skill.category} • {skill.level}</p>
+              </div>
             </div>
+            <button
+              onClick={() => {
+                const requestId = learnSkillRequestMap?.[skill.id];
+                if (requestId) {
+                  navigate('/learn/' + requestId);
+                } else {
+                  onContinue?.(skill.id);
+                }
+              }}
+              className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
+            >
+              Continue
+            </button>
           </div>
-          <button
-            onClick={() => onContinue?.(skill.id)}
-            className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
-          >
-            Continue
-          </button>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 /**
  * TeacherStudentsSection Component

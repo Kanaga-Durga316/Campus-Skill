@@ -1,13 +1,7 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import User from './models/User.js';
-import Skill from './models/Skill.js';
-import LearnSkill from './models/LearnSkill.js';
-import ExchangeRequest from './models/ExchangeRequest.js';
-import Message from './models/Message.js';
-import { hashPassword, comparePassword, generateToken } from './utils/auth.js';
+import { generateToken, verifyToken } from './utils/auth.js';
 import { authMiddleware, AuthRequest } from './utils/middleware.js';
 import { uploadNotes } from './utils/upload.js';
 import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
@@ -19,14 +13,203 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/campus_skill';
+/**
+ * ============================================================================
+ *  DEMO DATA STORE (in-memory only — no database)
+ *  Shapes intentionally mirror the previous Mongoose documents so the
+ *  existing React frontend keeps working unchanged.
+ * ============================================================================
+ */
 
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error('MongoDB connection error', err));
+let idCounter = 1000;
+const nid = () => `demo_${++idCounter}`;
+
+const users: any[] = [
+  {
+    _id: 'demo_user_1',
+    name: 'Alex Student',
+    email: 'alex@campus.edu',
+    role: 'student',
+    bio: 'Curious learner exploring programming and design.',
+    avatarUrl: '',
+    location: 'Campus North',
+    preferredMode: 'online',
+    experienceLevel: 'beginner',
+    sessionDurationHours: 1,
+    portfolioLinks: ['https://github.com/alex'],
+    verificationStatus: 'verified',
+    skills: [],
+  },
+  {
+    _id: 'demo_user_2',
+    name: 'Sam Teacher',
+    email: 'sam@campus.edu',
+    role: 'teacher',
+    bio: 'Senior CS student who loves teaching Python & Web Dev.',
+    avatarUrl: '',
+    location: 'Campus South',
+    preferredMode: 'hybrid',
+    experienceLevel: 'advanced',
+    sessionDurationHours: 2,
+    portfolioLinks: ['https://github.com/sam'],
+    verificationStatus: 'verified',
+    skills: [],
+  },
+];
+
+const skills: any[] = [
+  {
+    _id: 'demo_skill_1',
+    title: 'Python Programming',
+    description: 'Learn Python from scratch with hands-on exercises.',
+    category: 'Programming',
+    tags: ['python', 'coding'],
+    level: 'Beginner',
+    owner: { _id: 'demo_user_2', name: 'Sam Teacher' },
+    availability: true,
+    rating: 4.8,
+    courseDescription: 'A friendly introduction to Python fundamentals.',
+    notes: '',
+    notesFile: '',
+    videoLinks: ['https://youtube.com/watch?v=rfscVS0vtbw'],
+    recordedVideoLinks: [],
+    liveClassLink: 'https://meet.google.com/demo-python',
+    referenceLinks: ['https://docs.python.org/3/tutorial/'],
+    assignments: ['Write a function that prints the Fibonacci sequence.'],
+    githubLink: 'https://github.com/sam/python-demo',
+    difficulty: 'Beginner',
+    duration: '4 weeks',
+    published: true,
+    thumbnail: '',
+    modules: [
+      {
+        _id: 'demo_mod_1',
+        title: 'Getting Started',
+        description: 'Install Python and run your first script.',
+        notes: 'Use the official installer for your OS.',
+        notesFile: '',
+        videoLinks: [],
+        recordedVideoLinks: [],
+        liveClassLink: '',
+        assignments: [],
+        quizzes: [
+          {
+            _id: 'demo_quiz_1',
+            question: 'How do you print text in Python?',
+            options: ['echo "hi"', 'print("hi")', 'console.log("hi")', 'say("hi")'],
+            correctIndex: 1,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    _id: 'demo_skill_2',
+    title: 'Public Speaking',
+    description: 'Overcome stage fright and deliver confident talks.',
+    category: 'Communication',
+    tags: ['speaking', 'confidence'],
+    level: 'All Levels',
+    owner: { _id: 'demo_user_2', name: 'Sam Teacher' },
+    availability: true,
+    rating: 4.6,
+    courseDescription: 'Practical techniques for clear, engaging speeches.',
+    notes: '',
+    notesFile: '',
+    videoLinks: [],
+    recordedVideoLinks: [],
+    liveClassLink: '',
+    referenceLinks: [],
+    assignments: [],
+    githubLink: '',
+    difficulty: 'Beginner',
+    duration: '2 weeks',
+    published: true,
+    thumbnail: '',
+    modules: [],
+  },
+];
+
+const learnSkills: any[] = [
+  {
+    _id: 'demo_learn_1',
+    title: 'Guitar for Beginners',
+    description: 'I want to learn basic chords and strumming.',
+    category: 'Music',
+    tags: ['guitar', 'music'],
+    level: 'Beginner',
+    owner: { _id: 'demo_user_1', name: 'Alex Student' },
+    availability: true,
+    rating: 0,
+  },
+];
+
+const requests: any[] = [
+  {
+    _id: 'demo_req_1',
+    requester: { _id: 'demo_user_1', name: 'Alex Student' },
+    responder: { _id: 'demo_user_2', name: 'Sam Teacher' },
+    skillRequested: {
+      _id: 'demo_skill_1',
+      title: 'Python Programming',
+      category: 'Programming',
+      level: 'Beginner',
+      courseDescription: 'A friendly introduction to Python fundamentals.',
+      difficulty: 'Beginner',
+      duration: '4 weeks',
+      liveClassLink: 'https://meet.google.com/demo-python',
+      modules: [
+        {
+          _id: 'demo_mod_1',
+          title: 'Getting Started',
+          description: 'Install Python and run your first script.',
+          notes: 'Use the official installer for your OS.',
+          notesFile: '',
+          videoLinks: [],
+          recordedVideoLinks: [],
+          liveClassLink: '',
+          assignments: [],
+          quizzes: [
+            {
+              _id: 'demo_quiz_1',
+              question: 'How do you print text in Python?',
+              options: ['echo "hi"', 'print("hi")', 'console.log("hi")', 'say("hi")'],
+              correctIndex: 1,
+            },
+          ],
+        },
+      ],
+    },
+    skillOffered: {
+      _id: 'demo_learn_1',
+      title: 'Guitar for Beginners',
+    },
+    status: 'accepted',
+    message: 'Hi! I would love to learn Python in exchange for guitar lessons.',
+    scheduledAt: '',
+    progress: 35,
+    completedModules: ['demo_mod_1'],
+    quizScore: 1,
+    quizTotal: 1,
+    quizStatus: 'passed',
+    assignmentStatus: 'submitted',
+    assignmentText: 'Here is my Fibonacci function.',
+    liveClassAttended: true,
+    feedback: { rating: 0, comment: '' },
+    certificate: { issued: false, certificateId: '', issuedAt: '' },
+    completedAt: '',
+    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+    updatedAt: new Date(Date.now() - 3600000).toISOString(),
+  },
+];
+
+const messages: any[] = [];
+
+// Helper: shallow clone so callers can't mutate the store accidentally
+const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 
 // Health check
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
 
 // ===== AUTH ROUTES =====
 app.post('/api/auth/register', async (req: Request, res: Response) => {
@@ -37,18 +220,30 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Name, email, and password required' });
     }
 
-    const existing = await User.findOne({ email });
+    const existing = users.find((u) => u.email === email);
     if (existing) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    const passwordHash = await hashPassword(password);
-    const user = await User.create({ name, email, passwordHash, role: role || 'student' });
-    
-    const token = generateToken(user._id.toString());
-    res.status(201).json({ user: user.toJSON(), token });
+    const user: any = {
+      _id: nid(),
+      name,
+      email,
+      role: role || 'student',
+      bio: '',
+      preferredMode: 'online',
+      experienceLevel: 'beginner',
+      sessionDurationHours: 1,
+      portfolioLinks: [],
+      verificationStatus: 'unverified',
+      skills: [],
+    };
+    users.push(user);
+
+    const token = generateToken(user._id);
+    const { skills: _s, ...safeUser } = user;
+    res.status(201).json({ user: safeUser, token });
   } catch (err: any) {
-    console.error('Registration error:', err.message, err);
     res.status(500).json({ error: 'Registration failed', details: err.message });
   }
 });
@@ -61,48 +256,57 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const user = await User.findOne({ email });
+    // Demo: accept any credentials; prefer a seeded user, else create one.
+    let user = users.find((u) => u.email === email);
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      user = {
+        _id: nid(),
+        name: email.split('@')[0] || 'Demo User',
+        email,
+        role: 'student',
+        bio: '',
+        preferredMode: 'online',
+        experienceLevel: 'beginner',
+        sessionDurationHours: 1,
+        portfolioLinks: [],
+        verificationStatus: 'unverified',
+        skills: [],
+      };
+      users.push(user);
     }
 
-    const valid = await comparePassword(password, user.passwordHash);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-
-    const token = generateToken(user._id.toString());
-    res.json({ user: user.toJSON(), token });
+    const token = generateToken(user._id);
+    const { skills: _s, ...safeUser } = user;
+    res.json({ user: safeUser, token });
   } catch (err) {
     res.status(500).json({ error: 'Login failed' });
   }
 });
 
 // ===== USER ROUTES =====
-app.get('/api/users', async (req: Request, res: Response) => {
-  try {
-    const users = await User.find().select('-passwordHash').populate('skills').limit(50);
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
+app.get('/api/users', (_req: Request, res: Response) => {
+  const safe = users.map((u) => {
+    const { skills: _s, ...rest } = u;
+    return rest;
+  });
+  res.json(safe);
 });
 
-app.get('/api/users/:id', async (req: Request, res: Response) => {
-  try {
-    const user = await User.findById(req.params.id).select('-passwordHash').populate('skills');
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch user' });
-  }
+app.get('/api/users/:id', (req: Request, res: Response) => {
+  const user = users.find((u) => u._id === String(req.params.id));
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const { skills: _s, ...rest } = user;
+  res.json(rest);
 });
 
-app.put('/api/users/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.put('/api/users/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    if (req.userId !== req.params.id && req.userId) {
+    if (req.userId !== String(req.params.id) && req.userId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
+
+    const user = users.find((u) => u._id === String(req.params.id));
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
     const {
       name,
@@ -113,67 +317,53 @@ app.put('/api/users/:id', authMiddleware, async (req: AuthRequest, res: Response
       experienceLevel,
       sessionDurationHours,
       portfolioLinks,
-      verificationStatus
+      verificationStatus,
     } = req.body;
 
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      {
-        name,
-        bio,
-        avatarUrl,
-        location,
-        preferredMode,
-        experienceLevel,
-        sessionDurationHours,
-        portfolioLinks,
-        verificationStatus
-      },
-      { new: true }
-    ).select('-passwordHash');
+    if (name !== undefined) user.name = name;
+    if (bio !== undefined) user.bio = bio;
+    if (avatarUrl !== undefined) user.avatarUrl = avatarUrl;
+    if (location !== undefined) user.location = location;
+    if (preferredMode !== undefined) user.preferredMode = preferredMode;
+    if (experienceLevel !== undefined) user.experienceLevel = experienceLevel;
+    if (sessionDurationHours !== undefined) user.sessionDurationHours = sessionDurationHours;
+    if (portfolioLinks !== undefined) user.portfolioLinks = portfolioLinks;
+    if (verificationStatus !== undefined) user.verificationStatus = verificationStatus;
 
-
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json(user);
+    const { skills: _s, ...rest } = user;
+    res.json(rest);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
 // ===== SKILL ROUTES =====
-app.get('/api/skills', async (req: Request, res: Response) => {
+app.get('/api/skills', (req: Request, res: Response) => {
   try {
     const { search } = req.query;
-    let query: any = {};
-
+    let result = skills;
     if (search) {
-      query = {
-        $or: [
-          { title: { $regex: search, $options: 'i' } },
-          { description: { $regex: search, $options: 'i' } },
-          { tags: { $in: [new RegExp(search as string, 'i')] } }
-        ]
-      };
+      const q = String(search).toLowerCase();
+      result = skills.filter(
+        (s) =>
+          s.title?.toLowerCase().includes(q) ||
+          s.description?.toLowerCase().includes(q) ||
+          (s.tags || []).some((t: string) => t.toLowerCase().includes(q))
+      );
     }
-
-    const skills = await Skill.find(query).populate('owner').limit(100);
-    res.json(skills);
+    res.json(result.map(clone));
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch skills' });
   }
 });
 
-app.get('/api/skills/:id', async (req: Request, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).populate('owner');
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    res.json(skill);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch skill' });
-  }
+app.get('/api/skills/:id', (req: Request, res: Response) => {
+  const skill = skills.find((s) => s._id === String(req.params.id));
+  if (!skill) return res.status(404).json({ error: 'Skill not found' });
+  res.json(clone(skill));
 });
 
-app.post('/api/skills', authMiddleware, uploadNotes, async (req: AuthRequest, res: Response) => {
+app.post('/api/skills', authMiddleware, uploadNotes, (req: AuthRequest, res: Response) => {
   try {
     const {
       title,
@@ -190,81 +380,75 @@ app.post('/api/skills', authMiddleware, uploadNotes, async (req: AuthRequest, re
       assignments,
       githubLink,
       difficulty,
-      duration
+      duration,
     } = req.body;
 
     if (!title) {
       return res.status(400).json({ error: 'Title is required' });
     }
 
-    const skill = await Skill.create({
+    const ownerUser = users.find((u) => u._id === req.userId);
+    const skill: any = {
+      _id: nid(),
       title,
       description,
       category,
       tags: tags || [],
       level,
-      owner: req.userId,
+      owner: { _id: req.userId, name: ownerUser?.name || 'You' },
       courseDescription,
       notes,
       notesFile: req.file ? req.file.filename : undefined,
-      videoLinks: typeof videoLinks === 'string' ? videoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : (videoLinks || []),
-      recordedVideoLinks: typeof recordedVideoLinks === 'string' ? recordedVideoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : (recordedVideoLinks || []),
+      videoLinks: typeof videoLinks === 'string' ? videoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : videoLinks || [],
+      recordedVideoLinks: typeof recordedVideoLinks === 'string' ? recordedVideoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : recordedVideoLinks || [],
       liveClassLink,
-      referenceLinks: typeof referenceLinks === 'string' ? referenceLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : (referenceLinks || []),
-      assignments: typeof assignments === 'string' ? assignments.split(',').map((s: string) => s.trim()).filter(Boolean) : (assignments || []),
+      referenceLinks: typeof referenceLinks === 'string' ? referenceLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : referenceLinks || [],
+      assignments: typeof assignments === 'string' ? assignments.split(',').map((s: string) => s.trim()).filter(Boolean) : assignments || [],
       githubLink,
       difficulty,
-      duration
-    });
-
-    await User.findByIdAndUpdate(req.userId, {
-      $push: { skills: skill._id }
-    });
-
-    const populated = await skill.populate('owner');
-    res.status(201).json(populated);
+      duration,
+      published: false,
+      modules: [],
+      rating: 0,
+    };
+    skills.push(skill);
+    res.status(201).json(clone(skill));
   } catch (err: any) {
-    console.error('Skill creation error:', err.message);
     res.status(500).json({ error: err.message || 'Failed to create skill' });
   }
 });
 
-app.put('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.put('/api/skills/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-
-    if (skill.owner.toString() !== req.userId) {
+    if (skill.owner._id !== req.userId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
     const { title, description, category, tags, level, availability, rating } = req.body;
-    const updated = await Skill.findByIdAndUpdate(
-      req.params.id,
-      { title, description, category, tags, level, availability, rating },
-      { new: true }
-    ).populate('owner');
+    if (title !== undefined) skill.title = title;
+    if (description !== undefined) skill.description = description;
+    if (category !== undefined) skill.category = category;
+    if (tags !== undefined) skill.tags = tags;
+    if (level !== undefined) skill.level = level;
+    if (availability !== undefined) skill.availability = availability;
+    if (rating !== undefined) skill.rating = rating;
 
-    res.json(updated);
+    res.json(clone(skill));
   } catch (err) {
     res.status(500).json({ error: 'Failed to update skill' });
   }
 });
 
-app.delete('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.delete('/api/skills/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-
-    if (skill.owner.toString() !== req.userId) {
+    const idx = skills.findIndex((s) => s._id === String(req.params.id));
+    if (idx === -1) return res.status(404).json({ error: 'Skill not found' });
+    if (skills[idx].owner._id !== req.userId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-
-    await Skill.findByIdAndDelete(req.params.id);
-    await User.findByIdAndUpdate(req.userId, {
-      $pull: { skills: req.params.id }
-    });
-
+    skills.splice(idx, 1);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete skill' });
@@ -272,7 +456,6 @@ app.delete('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Resp
 });
 
 // ===== COURSE MANAGEMENT ROUTES (owner-only) =====
-// Helper: normalise a value into a trimmed, non-empty string array
 const toArr = (v: any): string[] =>
   typeof v === 'string'
     ? v.split(',').map((s: string) => s.trim()).filter(Boolean)
@@ -280,32 +463,43 @@ const toArr = (v: any): string[] =>
       ? v.map((s: any) => String(s).trim()).filter(Boolean)
       : [];
 
-// Add a module to a course
-app.post('/api/skills/:id/modules', authMiddleware, async (req: AuthRequest, res: Response) => {
+const findModule = (skill: any, moduleId: string) =>
+  skill.modules.find((m: any) => m._id === moduleId);
+
+app.post('/api/skills/:id/modules', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
     const { title, description } = req.body;
     if (!title) return res.status(400).json({ error: 'Module title is required' });
 
-    skill.modules.push({ title, description });
-    await skill.save();
-    res.status(201).json(skill);
+    skill.modules.push({
+      _id: nid(),
+      title,
+      description,
+      notes: '',
+      notesFile: '',
+      videoLinks: [],
+      recordedVideoLinks: [],
+      liveClassLink: '',
+      assignments: [],
+      quizzes: [],
+    });
+    res.status(201).json(clone(skill));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to add module' });
   }
 });
 
-// Update a module
-app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, async (req: AuthRequest, res: Response) => {
+app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId as string);
+    const module = findModule(skill, String(req.params.moduleId));
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     const { title, description, notes, liveClassLink, videoLinks, recordedVideoLinks, assignments } = req.body;
@@ -318,67 +512,60 @@ app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, async 
     if (assignments !== undefined) module.assignments = toArr(assignments);
     if (req.file) module.notesFile = req.file.filename;
 
-    await skill.save();
-    res.json(skill);
+    res.json(clone(skill));
   } catch (err: any) {
-    console.error('Module update error:', err.message);
     res.status(500).json({ error: err.message || 'Failed to update module' });
   }
 });
 
-// Delete a module
-app.delete('/api/skills/:id/modules/:moduleId', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.delete('/api/skills/:id/modules/:moduleId', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId as string);
-    if (!module) return res.status(404).json({ error: 'Module not found' });
-
-    skill.modules.pull({ _id: req.params.moduleId } as any);
-    await skill.save();
+    const idx = skill.modules.findIndex((m: any) => m._id === String(req.params.moduleId));
+    if (idx === -1) return res.status(404).json({ error: 'Module not found' });
+    skill.modules.splice(idx, 1);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete module' });
   }
 });
 
-// Add a quiz to a module
-app.post('/api/skills/:id/modules/:moduleId/quizzes', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.post('/api/skills/:id/modules/:moduleId/quizzes', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId as string);
+    const module = findModule(skill, String(req.params.moduleId));
     if (!module) return res.status(404).json({ error: 'Module not found' });
 
     const { question, options, correctIndex } = req.body;
     if (!question) return res.status(400).json({ error: 'Question is required' });
 
     module.quizzes.push({
+      _id: nid(),
       question,
       options: toArr(options),
-      correctIndex: typeof correctIndex === 'number' ? correctIndex : 0
+      correctIndex: typeof correctIndex === 'number' ? correctIndex : 0,
     });
-    await skill.save();
-    res.status(201).json(skill);
+    res.status(201).json(clone(skill));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to add quiz' });
   }
 });
 
-// Update a quiz
-app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId as string);
+    const module = findModule(skill, String(req.params.moduleId));
     if (!module) return res.status(404).json({ error: 'Module not found' });
-    const quiz = module.quizzes.id(req.params.quizId as string);
+    const quiz = module.quizzes.find((q: any) => q._id === String(req.params.quizId));
     if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
 
     const { question, options, correctIndex } = req.body;
@@ -386,39 +573,34 @@ app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, asy
     if (options !== undefined) quiz.options = toArr(options);
     if (correctIndex !== undefined) quiz.correctIndex = correctIndex;
 
-    await skill.save();
-    res.json(skill);
+    res.json(clone(skill));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update quiz' });
   }
 });
 
-// Delete a quiz
-app.delete('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.delete('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
-    const module = skill.modules.id(req.params.moduleId as string);
+    const module = findModule(skill, String(req.params.moduleId));
     if (!module) return res.status(404).json({ error: 'Module not found' });
-    const quiz = module.quizzes.id(req.params.quizId as string);
-    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
-
-    module.quizzes.pull({ _id: req.params.quizId } as any);
-    await skill.save();
+    const idx = module.quizzes.findIndex((q: any) => q._id === String(req.params.quizId));
+    if (idx === -1) return res.status(404).json({ error: 'Quiz not found' });
+    module.quizzes.splice(idx, 1);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to delete quiz' });
   }
 });
 
-// Publish / unpublish a course (and update course-level metadata)
-app.patch('/api/skills/:id/publish', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.patch('/api/skills/:id/publish', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await Skill.findById(req.params.id);
+    const skill = skills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
     const { published, courseDescription, difficulty, duration, liveClassLink } = req.body;
     if (published !== undefined) skill.published = published;
@@ -427,79 +609,74 @@ app.patch('/api/skills/:id/publish', authMiddleware, async (req: AuthRequest, re
     if (duration !== undefined) skill.duration = duration;
     if (liveClassLink !== undefined) skill.liveClassLink = liveClassLink;
 
-    await skill.save();
-    res.json(skill);
+    res.json(clone(skill));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to publish course' });
   }
 });
 
-// ===== LEARN-SKILLS ROUTES (separate collection: learnSkills) =====
-app.get('/api/learn-skills', async (req: Request, res: Response) => {
-  try {
-    const skills = await LearnSkill.find().populate('owner').limit(200);
-    res.json(skills);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch learn skills' });
-  }
+// ===== LEARN-SKILLS ROUTES =====
+app.get('/api/learn-skills', (_req: Request, res: Response) => {
+  res.json(learnSkills.map(clone));
 });
 
-app.get('/api/learn-skills/:id', async (req: Request, res: Response) => {
-  try {
-    const skill = await LearnSkill.findById(req.params.id).populate('owner');
-    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
-    res.json(skill);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch learn skill' });
-  }
+app.get('/api/learn-skills/:id', (req: Request, res: Response) => {
+  const skill = learnSkills.find((s) => s._id === String(req.params.id));
+  if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
+  res.json(clone(skill));
 });
 
-app.post('/api/learn-skills', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.post('/api/learn-skills', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
     const { title, description, category, tags, level } = req.body;
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
-    const skill = await LearnSkill.create({
+    const ownerUser = users.find((u) => u._id === req.userId);
+    const skill: any = {
+      _id: nid(),
       title,
       description,
       category,
       tags: tags || [],
       level,
-      owner: req.userId
-    });
-
-    const populated = await skill.populate('owner');
-    res.status(201).json(populated);
+      owner: { _id: req.userId, name: ownerUser?.name || 'You' },
+      availability: true,
+      rating: 0,
+    };
+    learnSkills.push(skill);
+    res.status(201).json(clone(skill));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to create learn skill' });
   }
 });
 
-app.put('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.put('/api/learn-skills/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await LearnSkill.findById(req.params.id);
+    const skill = learnSkills.find((s) => s._id === String(req.params.id));
     if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
 
     const { title, description, category, tags, level, availability, rating } = req.body;
-    const updated = await LearnSkill.findByIdAndUpdate(
-      req.params.id,
-      { title, description, category, tags, level, availability, rating },
-      { new: true }
-    ).populate('owner');
-    res.json(updated);
+    if (title !== undefined) skill.title = title;
+    if (description !== undefined) skill.description = description;
+    if (category !== undefined) skill.category = category;
+    if (tags !== undefined) skill.tags = tags;
+    if (level !== undefined) skill.level = level;
+    if (availability !== undefined) skill.availability = availability;
+    if (rating !== undefined) skill.rating = rating;
+
+    res.json(clone(skill));
   } catch (err) {
     res.status(500).json({ error: 'Failed to update learn skill' });
   }
 });
 
-app.delete('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.delete('/api/learn-skills/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const skill = await LearnSkill.findById(req.params.id);
-    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
-    if (skill.owner.toString() !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
-
-    await LearnSkill.findByIdAndDelete(req.params.id);
+    const idx = learnSkills.findIndex((s) => s._id === String(req.params.id));
+    if (idx === -1) return res.status(404).json({ error: 'Learn skill not found' });
+    if (learnSkills[idx].owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    learnSkills.splice(idx, 1);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete learn skill' });
@@ -507,59 +684,33 @@ app.delete('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res
 });
 
 // ===== EXCHANGE REQUEST ROUTES =====
-app.get('/api/requests', async (req: Request, res: Response) => {
-  try {
-    const requests = await ExchangeRequest.find()
-      .populate('requester responder skillRequested skillOffered')
-      .limit(100);
-    res.json(requests);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch requests' });
-  }
+app.get('/api/requests', (_req: Request, res: Response) => {
+  res.json(requests.map(clone));
 });
 
-// Student's learning enrollments ("My Learning"): accepted requests where I am the requester
-app.get('/api/requests/enrollments', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const requests = await ExchangeRequest.find({
-      requester: req.userId,
-      status: { $in: ['accepted', 'completed'] }
-    })
-      .populate('requester responder skillRequested skillOffered')
-      .sort({ updatedAt: -1 });
-    res.json(requests);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch enrollments' });
-  }
+app.get('/api/requests/enrollments', authMiddleware, (req: AuthRequest, res: Response) => {
+  const result = requests
+    .filter(
+      (r) => r.requester._id === req.userId && ['accepted', 'completed'].includes(r.status)
+    )
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  res.json(result.map(clone));
 });
 
-// Teacher's requests ("Students Learning My Skills"): all requests where I am the responder
-// (pending requests to accept/reject + accepted enrollments to track progress)
-app.get('/api/requests/teacher', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const requests = await ExchangeRequest.find({
-      responder: req.userId
-    })
-      .populate('requester responder skillRequested skillOffered')
-      .sort({ updatedAt: -1 });
-    res.json(requests);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch teaching enrollments' });
-  }
+app.get('/api/requests/teacher', authMiddleware, (req: AuthRequest, res: Response) => {
+  const result = requests
+    .filter((r) => r.responder._id === req.userId)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  res.json(result.map(clone));
 });
 
-app.get('/api/requests/:id', async (req: Request, res: Response) => {
-  try {
-    const request = await ExchangeRequest.findById(req.params.id)
-      .populate('requester responder skillRequested skillOffered');
-    if (!request) return res.status(404).json({ error: 'Request not found' });
-    res.json(request);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch request' });
-  }
+app.get('/api/requests/:id', (req: Request, res: Response) => {
+  const request = requests.find((r) => r._id === String(req.params.id));
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+  res.json(clone(request));
 });
 
-app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.post('/api/requests', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
     const { responderId, skillRequestedId, skillOfferedId, message } = req.body;
 
@@ -567,38 +718,68 @@ app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response
       return res.status(400).json({ error: 'Responder and skill requested required' });
     }
 
-    const request = await ExchangeRequest.create({
-      requester: req.userId,
-      responder: responderId,
-      skillRequested: skillRequestedId,
-      skillOffered: skillOfferedId,
-      message
-    });
+    const responder = users.find((u) => u._id === responderId);
+    const requester = users.find((u) => u._id === req.userId);
+    const skillRequested = skills.find((s) => s._id === skillRequestedId);
+    const skillOffered = skillOfferedId ? skills.find((s) => s._id === skillOfferedId) : null;
 
-    const populated = await request.populate('requester responder skillRequested skillOffered');
-    res.status(201).json(populated);
+    const request: any = {
+      _id: nid(),
+      requester: { _id: req.userId, name: requester?.name || 'You' },
+      responder: { _id: responderId, name: responder?.name || 'Unknown' },
+      skillRequested: skillRequested
+        ? {
+            _id: skillRequested._id,
+            title: skillRequested.title,
+            category: skillRequested.category,
+            level: skillRequested.level,
+            courseDescription: skillRequested.courseDescription,
+            difficulty: skillRequested.difficulty,
+            duration: skillRequested.duration,
+            liveClassLink: skillRequested.liveClassLink,
+            modules: skillRequested.modules,
+          }
+        : { _id: skillRequestedId, title: 'Unknown Skill' },
+      skillOffered: skillOffered ? { _id: skillOffered._id, title: skillOffered.title } : { _id: skillOfferedId, title: '—' },
+      status: 'open',
+      message,
+      scheduledAt: '',
+      progress: 0,
+      completedModules: [],
+      quizScore: 0,
+      quizTotal: 0,
+      quizStatus: 'not_started',
+      assignmentStatus: 'not_started',
+      assignmentText: '',
+      liveClassAttended: false,
+      feedback: { rating: 0, comment: '' },
+      certificate: { issued: false, certificateId: '', issuedAt: '' },
+      completedAt: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    requests.push(request);
+    res.status(201).json(clone(request));
   } catch (err) {
     res.status(500).json({ error: 'Failed to create request' });
   }
 });
 
-app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.put('/api/requests/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const request = await ExchangeRequest.findById(req.params.id)
-      .populate('requester responder skillRequested skillOffered');
+    const request = requests.find((r) => r._id === String(req.params.id));
     if (!request) return res.status(404).json({ error: 'Request not found' });
 
-    const isRequester = request.requester._id.toString() === req.userId;
-    const isResponder = request.responder._id.toString() === req.userId;
+    const isRequester = request.requester._id === req.userId;
+    const isResponder = request.responder._id === req.userId;
     if (!isRequester && !isResponder) return res.status(403).json({ error: 'Unauthorized' });
 
     const {
       status, message, scheduledAt,
       completedModules, assignmentText, answers, liveClassAttended,
-      assignmentStatus, feedback
+      assignmentStatus, feedback,
     } = req.body;
 
-    // Status transitions (teacher accepts/rejects; student cancels)
     if (status !== undefined) {
       if ((status === 'accepted' || status === 'rejected') && !isResponder) {
         return res.status(403).json({ error: 'Only the teacher can accept or reject' });
@@ -607,13 +788,12 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
         return res.status(403).json({ error: 'Only the student can cancel' });
       }
       request.status = status;
-      if (status === 'completed' && !request.completedAt) request.completedAt = new Date();
+      if (status === 'completed' && !request.completedAt) request.completedAt = new Date().toISOString();
     }
 
     if (message !== undefined) request.message = message;
     if (scheduledAt !== undefined) request.scheduledAt = scheduledAt;
 
-    // Teacher-only: grade the assignment + read feedback (teachers monitor only)
     if (assignmentStatus !== undefined) {
       if (!isResponder) return res.status(403).json({ error: 'Only the teacher can update assignment status' });
       request.assignmentStatus = assignmentStatus;
@@ -624,7 +804,6 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
       if (feedback.comment !== undefined) request.feedback.comment = feedback.comment;
     }
 
-    // Student-only learning actions -> all progress is auto-calculated afterwards
     if (completedModules !== undefined || assignmentText !== undefined || answers !== undefined || liveClassAttended !== undefined) {
       if (!isRequester) return res.status(403).json({ error: 'Only the student can update their learning progress' });
 
@@ -648,49 +827,44 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
         request.quizStatus = result.status;
       }
 
-      // AUTO-CALCULATE progress (backend only)
       request.progress = computeProgress({
         completedModules: request.completedModules,
         assignmentStatus: request.assignmentStatus,
         quizStatus: request.quizStatus,
         liveClassAttended: request.liveClassAttended,
-        skill: request.skillRequested
+        skill: request.skillRequested,
       });
 
-      // AUTO-COMPLETE when every milestone is done
       if (request.progress >= 100 && request.status !== 'completed') {
         request.status = 'completed';
-        request.completedAt = new Date();
+        request.completedAt = new Date().toISOString();
       }
     }
 
-    // Certificate is issued whenever the course is completed (auto or by teacher)
     if (request.status === 'completed' && !(request.certificate && request.certificate.issued)) {
       const skillId = request.skillRequested?._id?.toString() || '';
       request.certificate = {
         issued: true,
         certificateId: generateCertificateId(skillId, request._id.toString()),
-        issuedAt: new Date()
+        issuedAt: new Date().toISOString(),
       };
     }
 
-    await request.save();
-    res.json(request);
+    request.updatedAt = new Date().toISOString();
+    res.json(clone(request));
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to update request' });
   }
 });
 
-app.delete('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.delete('/api/requests/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
-    const request = await ExchangeRequest.findById(req.params.id);
-    if (!request) return res.status(404).json({ error: 'Request not found' });
-
-    if (request.requester.toString() !== req.userId) {
+    const idx = requests.findIndex((r) => r._id === String(req.params.id));
+    if (idx === -1) return res.status(404).json({ error: 'Request not found' });
+    if (requests[idx].requester._id !== req.userId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-
-    await ExchangeRequest.findByIdAndDelete(req.params.id);
+    requests.splice(idx, 1);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete request' });
@@ -698,32 +872,25 @@ app.delete('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Re
 });
 
 // ===== MESSAGE ROUTES =====
-app.get('/api/messages', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const messages = await Message.find({
-      $or: [{ from: req.userId }, { to: req.userId }]
-    }).populate('from to').limit(200);
-    res.json(messages);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
+app.get('/api/messages', authMiddleware, (req: AuthRequest, res: Response) => {
+  const result = messages.filter(
+    (m) => m.from._id === req.userId || m.to._id === req.userId
+  );
+  res.json(result.map(clone));
 });
 
-app.get('/api/messages/:userId', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const messages = await Message.find({
-      $or: [
-        { from: req.userId, to: req.params.userId },
-        { from: req.params.userId, to: req.userId }
-      ]
-    }).populate('from to').sort({ createdAt: 1 });
-    res.json(messages);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
+app.get('/api/messages/:userId', authMiddleware, (req: AuthRequest, res: Response) => {
+  const result = messages
+    .filter(
+      (m) =>
+        (m.from._id === req.userId && m.to._id === String(req.params.userId)) ||
+        (m.from._id === String(req.params.userId) && m.to._id === req.userId)
+    )
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  res.json(result.map(clone));
 });
 
-app.post('/api/messages', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.post('/api/messages', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
     const { toUserId, text } = req.body;
 
@@ -731,43 +898,40 @@ app.post('/api/messages', authMiddleware, async (req: AuthRequest, res: Response
       return res.status(400).json({ error: 'Recipient and text required' });
     }
 
-    const message = await Message.create({
-      from: req.userId,
-      to: toUserId,
-      text
-    });
-
-    const populated = await message.populate('from to');
-    res.status(201).json(populated);
+    const fromUser = users.find((u) => u._id === req.userId);
+    const toUser = users.find((u) => u._id === toUserId);
+    const message: any = {
+      _id: nid(),
+      from: { _id: req.userId, name: fromUser?.name || 'You' },
+      to: { _id: toUserId, name: toUser?.name || 'Unknown' },
+      text,
+      read: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    messages.push(message);
+    res.status(201).json(clone(message));
   } catch (err) {
     res.status(500).json({ error: 'Failed to send message' });
   }
 });
 
-app.put('/api/messages/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+app.put('/api/messages/:id', authMiddleware, (req: AuthRequest, res: Response) => {
   try {
     const { read } = req.body;
-
-    const message = await Message.findById(req.params.id);
+    const message = messages.find((m) => m._id === String(req.params.id));
     if (!message) return res.status(404).json({ error: 'Message not found' });
-
-    if (message.to.toString() !== req.userId) {
+    if (message.to._id !== req.userId) {
       return res.status(403).json({ error: 'Unauthorized' });
     }
-
-    const updated = await Message.findByIdAndUpdate(
-      req.params.id,
-      { read },
-      { new: true }
-    ).populate('from to');
-
-    res.json(updated);
+    message.read = read;
+    res.json(clone(message));
   } catch (err) {
     res.status(500).json({ error: 'Failed to update message' });
   }
 });
 
-// Central error handler (ensures upload/validation errors return JSON)
+// Central error handler
 app.use((err: any, _req: Request, res: Response, _next: any) => {
   console.error('Unhandled error:', err.message);
   res.status(400).json({ error: err.message || 'Request failed' });
@@ -775,5 +939,5 @@ app.use((err: any, _req: Request, res: Response, _next: any) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server listening on http://localhost:${PORT}`);
+  console.log(`Server (DEMO mode, no database) listening on http://localhost:${PORT}`);
 });

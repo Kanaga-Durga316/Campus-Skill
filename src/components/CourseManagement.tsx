@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
@@ -43,6 +43,13 @@ interface Skill {
   published: boolean;
   modules: Module[];
   rating?: number;
+  notes?: string;
+  notesFile?: string;
+  videoLinks: string[];
+  recordedVideoLinks: string[];
+  referenceLinks: string[];
+  githubLink?: string;
+  assignments: string[];
 }
 
 interface FeedbackItem {
@@ -64,14 +71,15 @@ const getStoredUser = () => {
 const CourseManagement: React.FC = () => {
   const { skillId } = useParams<{ skillId: string }>();
   const navigate = useNavigate();
-  const storedUser = getStoredUser();
+  const storedUser = useMemo(() => getStoredUser(), []);
 
   const [skill, setSkill] = useState<Skill | null>(null);
   const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
+  const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [forbidden, setForbidden] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'modules' | 'feedback'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'modules' | 'feedback'>('overview');
   const [saving, setSaving] = useState(false);
 
   // Overview draft
@@ -127,6 +135,19 @@ const CourseManagement: React.FC = () => {
     setFeedback(items);
   }, [skillId, storedUser]);
 
+  const loadStudents = useCallback(async () => {
+    if (!storedUser?._id || !skillId) return;
+    try {
+      const all = (await fetchJSON('/requests/teacher')) as any[];
+      const items = all.filter(
+        (r) => r.skillRequested?._id === skillId || r.skillRequested === skillId
+      );
+      setStudents(items);
+    } catch {
+      // ignore
+    }
+  }, [skillId, storedUser]);
+
   useEffect(() => {
     let mounted = true;
     const load = async () => {
@@ -154,6 +175,7 @@ const CourseManagement: React.FC = () => {
           liveClassLink: data.liveClassLink || ''
         });
         await loadFeedback();
+        await loadStudents();
       } catch (err: any) {
         if (mounted) setError(err.message || 'Failed to load course');
       } finally {
@@ -164,7 +186,7 @@ const CourseManagement: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [skillId, storedUser, loadFeedback]);
+  }, [skillId, storedUser, loadFeedback, loadStudents]);
 
   if (loading) {
     return (
@@ -406,13 +428,13 @@ const CourseManagement: React.FC = () => {
 
           {/* Tabs */}
           <div className="flex space-x-1 mb-6 bg-white dark:bg-slate-800 rounded-2xl p-1.5 shadow-sm border border-slate-200 dark:border-slate-700 w-fit">
-            {(['overview', 'modules', 'feedback'] as const).map((t) => (
+            {(['overview', 'students', 'modules', 'feedback'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setActiveTab(t)}
                 className={`px-5 py-2.5 rounded-xl font-semibold capitalize transition-all ${activeTab === t ? 'bg-indigo-600 text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
               >
-                {t === 'overview' ? '📖 Course Overview' : t === 'modules' ? '📂 Modules' : '⭐ Feedback'}
+                {t === 'overview' ? '📖 Course Overview' : t === 'students' ? '👥 Students' : t === 'modules' ? '📂 Modules' : '⭐ Feedback'}
               </button>
             ))}
           </div>
@@ -463,6 +485,72 @@ const CourseManagement: React.FC = () => {
                   placeholder="https://meet.google.com/..."
                 />
               </div>
+
+              {/* Course Materials */}
+              <div className="pt-6 border-t border-slate-200 dark:border-slate-700">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">📚 Course Materials</h3>
+                <div className="space-y-4">
+                  {skill.notes && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Notes</label>
+                      <p className="text-sm text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700 rounded-xl p-3">{skill.notes}</p>
+                    </div>
+                  )}
+                  {skill.notesFile && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Notes PDF</label>
+                      <a href={`/uploads/${skill.notesFile}`} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 underline">View PDF</a>
+                    </div>
+                  )}
+                  {skill.videoLinks && skill.videoLinks.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">YouTube Videos</label>
+                      <div className="space-y-2">
+                        {skill.videoLinks.map((link, i) => (
+                          <a key={i} href={link} target="_blank" rel="noreferrer" className="block text-sm text-indigo-600 underline truncate">{link}</a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {skill.recordedVideoLinks && skill.recordedVideoLinks.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Recorded Videos</label>
+                      <div className="space-y-2">
+                        {skill.recordedVideoLinks.map((link, i) => (
+                          <a key={i} href={link} target="_blank" rel="noreferrer" className="block text-sm text-indigo-600 underline truncate">{link}</a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {skill.referenceLinks && skill.referenceLinks.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Reference Links</label>
+                      <div className="space-y-2">
+                        {skill.referenceLinks.map((link, i) => (
+                          <a key={i} href={link} target="_blank" rel="noreferrer" className="block text-sm text-indigo-600 underline truncate">{link}</a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {skill.githubLink && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">GitHub Repository</label>
+                      <a href={skill.githubLink} target="_blank" rel="noreferrer" className="text-sm text-indigo-600 underline">{skill.githubLink}</a>
+                    </div>
+                  )}
+                  {skill.assignments && skill.assignments.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Assignments</label>
+                      <ul className="list-disc list-inside space-y-1">
+                        {skill.assignments.map((a, i) => (
+                          <li key={i} className="text-sm text-slate-600 dark:text-slate-300">{a}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <button
                 onClick={saveOverview}
                 disabled={saving}
@@ -470,6 +558,60 @@ const CourseManagement: React.FC = () => {
               >
                 {saving ? 'Saving...' : 'Save Overview'}
               </button>
+            </div>
+          )}
+
+          {/* ===== Students Tab ===== */}
+          {activeTab === 'students' && (
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-4">👥 Students Enrolled ({students.length})</h2>
+              {students.length === 0 ? (
+                <div className="text-center text-slate-500 dark:text-slate-400 py-8">No students enrolled yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {students.map((s) => {
+                    const status = s.status || 'open';
+                    const statusColors: Record<string, string> = {
+                      open: 'bg-yellow-100 text-yellow-700',
+                      pending: 'bg-yellow-100 text-yellow-700',
+                      accepted: 'bg-green-100 text-green-700',
+                      completed: 'bg-blue-100 text-blue-700',
+                      rejected: 'bg-red-100 text-red-700',
+                      cancelled: 'bg-gray-100 text-gray-700'
+                    };
+                    return (
+                      <div key={s._id} className="p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div>
+                            <h4 className="font-semibold text-slate-900 dark:text-white">{s.requester?.name || 'Student'}</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Requested: {new Date(s.createdAt).toLocaleDateString()}</p>
+                          </div>
+                          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColors[status] || 'bg-gray-100 text-gray-700'}`}>
+                            {status}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 mt-3 text-center">
+                          <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Progress</p>
+                            <p className="font-bold text-slate-900 dark:text-white">{s.progress || 0}%</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Quiz</p>
+                            <p className="font-bold text-slate-900 dark:text-white">{s.quizScore || 0}/{s.quizTotal || 0}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">Assignment</p>
+                            <p className="font-bold text-slate-900 dark:text-white capitalize">{(s.assignmentStatus || 'not_started').replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        {s.feedback?.rating > 0 && (
+                          <div className="mt-2 text-sm text-amber-600">⭐ {s.feedback.rating}/5 - {s.feedback.comment}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
@@ -73,7 +73,7 @@ const getStoredUser = () => {
 const StudentCourse: React.FC = () => {
   const { requestId } = useParams<{ requestId: string }>();
   const navigate = useNavigate();
-  const storedUser = getStoredUser();
+  const storedUser = useMemo(() => getStoredUser(), []);
 
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
