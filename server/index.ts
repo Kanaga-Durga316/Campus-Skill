@@ -5,6 +5,7 @@ import { generateToken, verifyToken } from './utils/auth.js';
 import { authMiddleware, AuthRequest } from './utils/middleware.js';
 import { uploadNotes } from './utils/upload.js';
 import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
+import { connectDatabase } from './config/db.js';
 
 dotenv.config();
 
@@ -938,6 +939,10 @@ app.use((err: any, _req: Request, res: Response, _next: any) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server (DEMO mode, no database) listening on http://localhost:${PORT}`);
-});
+
+(async () => {
+  await connectDatabase();
+  app.listen(PORT, () => {
+    console.log(`Server listening on http://localhost:${PORT}`);
+  });
+})();
