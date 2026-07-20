@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
@@ -81,6 +81,13 @@ const CourseManagement: React.FC = () => {
   const [forbidden, setForbidden] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'students' | 'modules' | 'feedback'>('overview');
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const mountedRef = useRef(true);
+
+  const showMessage = (msg: string) => {
+    setMessage(msg);
+    setTimeout(() => setMessage(''), 2500);
+  };
 
   // Overview draft
   const [overview, setOverview] = useState({
@@ -118,21 +125,25 @@ const CourseManagement: React.FC = () => {
 
   const loadFeedback = useCallback(async () => {
     if (!storedUser?._id) return;
-    const all = (await fetchJSON('/requests/teacher')) as any[];
-    const items: FeedbackItem[] = all
-      .filter(
-        (r) =>
-          (r.skillRequested?._id === skillId || r.skillRequested === skillId) &&
-          r.feedback &&
-          r.feedback.rating > 0
-      )
-      .map((r) => ({
-        _id: r._id,
-        studentName: r.requester?.name || 'Student',
-        rating: r.feedback.rating,
-        comment: r.feedback.comment || ''
-      }));
-    setFeedback(items);
+    try {
+      const all = (await fetchJSON('/requests/teacher')) as any[];
+      const items: FeedbackItem[] = all
+        .filter(
+          (r) =>
+            (r.skillRequested?._id === skillId || r.skillRequested === skillId) &&
+            r.feedback &&
+            r.feedback.rating > 0
+        )
+        .map((r) => ({
+          _id: r._id,
+          studentName: r.requester?.name || 'Student',
+          rating: r.feedback.rating,
+          comment: r.feedback.comment || ''
+        }));
+      if (mountedRef.current) setFeedback(items);
+    } catch {
+      // ignore
+    }
   }, [skillId, storedUser]);
 
   const loadStudents = useCallback(async () => {
@@ -142,7 +153,7 @@ const CourseManagement: React.FC = () => {
       const items = all.filter(
         (r) => r.skillRequested?._id === skillId || r.skillRequested === skillId
       );
-      setStudents(items);
+      if (mountedRef.current) setStudents(items);
     } catch {
       // ignore
     }
@@ -185,6 +196,7 @@ const CourseManagement: React.FC = () => {
     load();
     return () => {
       mounted = false;
+      mountedRef.current = false;
     };
   }, [skillId, storedUser, loadFeedback, loadStudents]);
 
@@ -225,12 +237,14 @@ const CourseManagement: React.FC = () => {
   // ===== Overview handlers =====
   const saveOverview = async () => {
     setSaving(true);
+    setError('');
     try {
       await fetchJSON(`/skills/${skillId}/publish`, {
         method: 'PATCH',
         body: JSON.stringify(overview)
       });
       await loadSkill();
+      showMessage('Overview saved');
     } catch (err: any) {
       setError(err.message || 'Failed to save');
     } finally {
@@ -240,12 +254,14 @@ const CourseManagement: React.FC = () => {
 
   const togglePublish = async () => {
     setSaving(true);
+    setError('');
     try {
       await fetchJSON(`/skills/${skillId}/publish`, {
         method: 'PATCH',
         body: JSON.stringify({ published: !skill.published })
       });
       await loadSkill();
+      showMessage(skill.published ? 'Course unpublished' : 'Course published');
     } catch (err: any) {
       setError(err.message || 'Failed to publish');
     } finally {
@@ -268,6 +284,7 @@ const CourseManagement: React.FC = () => {
   const saveModule = async () => {
     if (!moduleForm.title.trim()) return;
     setSaving(true);
+    setError('');
     try {
       if (editingModule) {
         await fetchJSON(`/skills/${skillId}/modules/${editingModule._id}`, {
@@ -282,6 +299,7 @@ const CourseManagement: React.FC = () => {
       }
       setShowModuleModal(false);
       await loadSkill();
+      showMessage(editingModule ? 'Module updated' : 'Module added');
     } catch (err: any) {
       setError(err.message || 'Failed to save module');
     } finally {
@@ -291,27 +309,38 @@ const CourseManagement: React.FC = () => {
 
   const deleteModule = async (moduleId: string) => {
     if (!confirm('Delete this module and all its content?')) return;
+    setSaving(true);
+    setError('');
     try {
       await fetchJSON(`/skills/${skillId}/modules/${moduleId}`, { method: 'DELETE' });
       await loadSkill();
+      showMessage('Module deleted');
     } catch (err: any) {
       setError(err.message || 'Failed to delete module');
+    } finally {
+      setSaving(false);
     }
   };
 
   const uploadNotes = async (moduleId: string, file: File) => {
+    setSaving(true);
+    setError('');
     const form = new FormData();
     form.append('notesFile', file);
     try {
       await fetchJSON(`/skills/${skillId}/modules/${moduleId}`, { method: 'PUT', body: form });
       await loadSkill();
+      showMessage('Notes uploaded');
     } catch (err: any) {
       setError(err.message || 'Failed to upload notes');
+    } finally {
+      setSaving(false);
     }
   };
 
   // Generic PATCH for a module's array/text fields
   const patchModule = async (moduleId: string, payload: any) => {
+    setSaving(true);
     try {
       await fetchJSON(`/skills/${skillId}/modules/${moduleId}`, {
         method: 'PUT',
@@ -320,6 +349,8 @@ const CourseManagement: React.FC = () => {
       await loadSkill();
     } catch (err: any) {
       setError(err.message || 'Update failed');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -346,6 +377,7 @@ const CourseManagement: React.FC = () => {
       correctIndex: Math.min(quizForm.correctIndex, options.length - 1)
     };
     setSaving(true);
+    setError('');
     try {
       if (editingQuiz) {
         await fetchJSON(`/skills/${skillId}/modules/${quizModuleId}/quizzes/${editingQuiz._id}`, {
@@ -360,6 +392,7 @@ const CourseManagement: React.FC = () => {
       }
       setShowQuizModal(false);
       await loadSkill();
+      showMessage(editingQuiz ? 'Quiz updated' : 'Quiz added');
     } catch (err: any) {
       setError(err.message || 'Failed to save quiz');
     } finally {
@@ -368,11 +401,16 @@ const CourseManagement: React.FC = () => {
   };
 
   const deleteQuiz = async (moduleId: string, quizId: string) => {
+    setSaving(true);
+    setError('');
     try {
       await fetchJSON(`/skills/${skillId}/modules/${moduleId}/quizzes/${quizId}`, { method: 'DELETE' });
       await loadSkill();
+      showMessage('Quiz deleted');
     } catch (err: any) {
       setError(err.message || 'Failed to delete quiz');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -424,6 +462,9 @@ const CourseManagement: React.FC = () => {
 
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-800 rounded-xl text-sm">{error}</div>
+          )}
+          {message && (
+            <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-sm">{message}</div>
           )}
 
           {/* Tabs */}
@@ -639,11 +680,11 @@ const CourseManagement: React.FC = () => {
                         {mod.description && <p className="text-xs text-slate-500 dark:text-slate-400">{mod.description}</p>}
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => openModuleModal(mod)} className="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100">Edit</button>
-                      <button onClick={() => deleteModule(mod._id)} className="px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100">Delete</button>
-                      <span className="text-slate-400">{expanded[mod._id] ? '▲' : '▼'}</span>
-                    </div>
+                     <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                       <button onClick={() => openModuleModal(mod)} disabled={saving} className="px-3 py-1.5 text-sm bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 disabled:opacity-50">Edit</button>
+                       <button onClick={() => deleteModule(mod._id)} disabled={saving} className="px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50">Delete</button>
+                       <span className="text-slate-400">{expanded[mod._id] ? '▲' : '▼'}</span>
+                     </div>
                   </div>
 
                   {expanded[mod._id] && (
@@ -693,12 +734,14 @@ const CourseManagement: React.FC = () => {
                         label="🎥 YouTube Videos"
                         items={mod.videoLinks}
                         placeholder="Paste YouTube URL"
+                        disabled={saving}
                         onSave={(items) => patchModule(mod._id, { videoLinks: items })}
                       />
                       <StringList
                         label="🎥 Recorded Videos"
                         items={mod.recordedVideoLinks}
                         placeholder="Paste recorded video URL"
+                        disabled={saving}
                         onSave={(items) => patchModule(mod._id, { recordedVideoLinks: items })}
                       />
                       <StringList
@@ -706,25 +749,26 @@ const CourseManagement: React.FC = () => {
                         items={mod.assignments}
                         placeholder="Describe an assignment"
                         textarea
+                        disabled={saving}
                         onSave={(items) => patchModule(mod._id, { assignments: items })}
                       />
 
                       {/* Quizzes */}
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">📝 Quizzes</label>
-                          <button onClick={() => openQuizModal(mod._id)} className="px-3 py-1.5 text-sm bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100">+ Add Quiz</button>
-                        </div>
-                        <div className="space-y-2">
-                          {mod.quizzes.map((q) => (
-                            <div key={q._id} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-800 dark:text-slate-200">{q.question}</span>
-                                <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                                  <button onClick={() => openQuizModal(mod._id, q)} className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100">Edit</button>
-                                  <button onClick={() => deleteQuiz(mod._id, q._id)} className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100">Delete</button>
-                                </div>
-                              </div>
+                           <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">📝 Quizzes</label>
+                           <button onClick={() => openQuizModal(mod._id)} disabled={saving} className="px-3 py-1.5 text-sm bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 disabled:opacity-50">+ Add Quiz</button>
+                         </div>
+                         <div className="space-y-2">
+                           {mod.quizzes.map((q) => (
+                             <div key={q._id} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                               <div className="flex items-center justify-between">
+                                 <span className="text-slate-800 dark:text-slate-200">{q.question}</span>
+                                 <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                                   <button onClick={() => openQuizModal(mod._id, q)} disabled={saving} className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 disabled:opacity-50">Edit</button>
+                                   <button onClick={() => deleteQuiz(mod._id, q._id)} disabled={saving} className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50">Delete</button>
+                                 </div>
+                               </div>
                               <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                                 {q.options.map((o, i) => (
                                   <span key={i} className={i === q.correctIndex ? 'font-semibold text-green-600 mr-2' : 'mr-2'}>
@@ -876,8 +920,9 @@ const StringList: React.FC<{
   items: string[];
   placeholder: string;
   textarea?: boolean;
+  disabled?: boolean;
   onSave: (items: string[]) => void;
-}> = ({ label, items, placeholder, textarea, onSave }) => {
+}> = ({ label, items, placeholder, textarea, disabled, onSave }) => {
   const [draft, setDraft] = useState('');
   const add = () => {
     const v = draft.trim();
@@ -915,7 +960,7 @@ const StringList: React.FC<{
               placeholder={placeholder}
             />
           )}
-          <button onClick={add} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm">Add</button>
+          <button onClick={add} disabled={disabled} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm disabled:opacity-50">Add</button>
         </div>
       </div>
     </div>

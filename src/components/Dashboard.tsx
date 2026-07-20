@@ -401,11 +401,14 @@ const Dashboard: React.FC = () => {
               {/* Your Skills Section */}
               <YourSkillsSection skills={mySkills} onManage={() => navigate('/manage-skills')} onViewDetails={(skillId) => navigate(`/course/${skillId}`)} />
 
-              {/* Skills You Are Learning */}
-              {myLearning.length > 0 && (
-                <MyLearningSection items={myLearning} onOpenCourse={(id) => navigate('/learn/' + id)} />
-              )}
-              <SkillsToLearnSection skills={skillsToLearn} learnSkillRequestMap={learnSkillRequestMap} onContinue={(skillId) => navigate(`/skill/${skillId}`)} />
+               {/* My Learning */}
+               <CombinedMyLearningSection
+                 enrolled={myLearning}
+                 skills={skillsToLearn}
+                 learnSkillRequestMap={learnSkillRequestMap}
+                 onOpenCourse={(id) => navigate('/learn/' + id)}
+                 onContinue={(skillId) => navigate(`/skill/${skillId}`)}
+               />
 
               {teachingRequests.length > 0 && (
                 <TeacherStudentsSection
@@ -539,18 +542,43 @@ const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onVie
 );
 
 /**
- * SkillsToLearnSection Component
- * Displays skills user wants to learn
+ * CombinedMyLearningSection Component
+ * Shows enrolled courses + skills the user wants to learn in one module
  */
-const SkillsToLearnSection: React.FC<{ skills: Skill[]; learnSkillRequestMap?: Record<string, string>; onContinue?: (skillId: string) => void }> = ({ skills, learnSkillRequestMap, onContinue }) => {
+const CombinedMyLearningSection: React.FC<{
+  enrolled: MyLearningItem[];
+  skills: Skill[];
+  learnSkillRequestMap?: Record<string, string>;
+  onOpenCourse: (requestId: string) => void;
+  onContinue: (skillId: string) => void;
+}> = ({ enrolled, skills, learnSkillRequestMap, onOpenCourse, onContinue }) => {
   const navigate = useNavigate();
+  const total = enrolled.length + skills.length;
+  if (total === 0) return null;
+
   return (
     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">📚 Skills You Are Learning</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">📚 My Learning</h2>
+        <span className="text-xs text-slate-500 dark:text-slate-400">{total} active</span>
       </div>
 
       <div className="space-y-3">
+        {enrolled.map((item) => (
+          <div key={item.id} className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
+            <div>
+              <h3 className="font-semibold text-slate-900 dark:text-white">{item.courseTitle}</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">👨‍🏫 {item.teacherName} • {item.status}</p>
+            </div>
+            <button
+              onClick={() => onOpenCourse(item.id)}
+              className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+            >
+              Open Course
+            </button>
+          </div>
+        ))}
+
         {skills.map((skill) => (
           <div key={skill.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800">
             <div className="flex items-center space-x-3">
@@ -566,7 +594,7 @@ const SkillsToLearnSection: React.FC<{ skills: Skill[]; learnSkillRequestMap?: R
                 if (requestId) {
                   navigate('/learn/' + requestId);
                 } else {
-                  onContinue?.(skill.id);
+                  onContinue(skill.id);
                 }
               }}
               className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-lg hover:bg-amber-700 transition-colors"
@@ -579,6 +607,48 @@ const SkillsToLearnSection: React.FC<{ skills: Skill[]; learnSkillRequestMap?: R
     </div>
   );
 };
+
+/**
+ * SuggestedStudentsSection Component
+ * Shows recommended students to connect with
+ */
+const SuggestedStudentsSection: React.FC<{ students: Student[]; onViewAll: () => void; onViewProfile?: (studentId: string) => void }> = ({ students, onViewAll, onViewProfile }) => (
+  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">👥 Students You May Know</h2>
+      <button onClick={onViewAll} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
+        View All →
+      </button>
+    </div>
+
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {students.slice(0, 4).map((student) => (
+        <div
+            key={student.id}
+            onClick={() => onViewProfile?.(student.id)}
+            className="flex items-center space-x-3 p-3 bg-slate-50 dark:bg-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-600 transition-all duration-200 cursor-pointer hover:scale-[1.02]"
+          >
+          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white ${
+            student.available
+              ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
+              : 'bg-slate-400'
+          }`}>
+            {student.avatar}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-slate-900 dark:text-white truncate">{student.name}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{student.department} • {student.year}</p>
+            <div className="flex items-center mt-1">
+              <span className="text-amber-500 text-xs">★</span>
+              <span className="text-xs text-slate-600 dark:text-slate-300 ml-0.5">{student.rating}</span>
+            </div>
+          </div>
+          <span className={`w-2 h-2 rounded-full ${student.available ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
 
 /**
  * TeacherStudentsSection Component
@@ -644,83 +714,6 @@ const TeacherStudentsSection: React.FC<{
               </>
             )}
           </div>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-/**
- * MyLearningSection Component
- * Shows courses the student is enrolled in (auto-appears after a teacher accepts a request)
- */
-const MyLearningSection: React.FC<{ items: MyLearningItem[]; onOpenCourse: (requestId: string) => void }> = ({ items, onOpenCourse }) => (
-  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">🎓 My Learning</h2>
-    </div>
-
-    <div className="space-y-3">
-      {items.map((item) => (
-        <div key={item.id} className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
-          <div>
-            <h3 className="font-semibold text-slate-900 dark:text-white">{item.courseTitle}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400">👨‍🏫 {item.teacherName}</p>
-            <div className="flex items-center mt-1 max-w-[200px]">
-              <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: item.progress + '%' }}></div>
-              </div>
-              <span className="text-xs text-slate-500 ml-2">{item.progress}%</span>
-            </div>
-          </div>
-          <button
-            onClick={() => onOpenCourse(item.id)}
-            className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
-          >
-            Open Course
-          </button>
-        </div>
-      ))}
-    </div>
-  </div>
-);
-
-/**
- * SuggestedStudentsSection Component
- * Shows recommended students to connect with
- */
-const SuggestedStudentsSection: React.FC<{ students: Student[]; onViewAll: () => void; onViewProfile?: (studentId: string) => void }> = ({ students, onViewAll, onViewProfile }) => (
-  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
-    <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">👥 Students You May Know</h2>
-      <button onClick={onViewAll} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
-        View All →
-      </button>
-    </div>
-
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      {students.slice(0, 4).map((student) => (
-        <div
-            key={student.id}
-            onClick={() => onViewProfile?.(student.id)}
-            className="flex items-center space-x-3 p-3 bg-slate-50 dark:bg-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-600 transition-all duration-200 cursor-pointer hover:scale-[1.02]"
-          >
-          <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white ${
-            student.available
-              ? 'bg-gradient-to-br from-emerald-500 to-teal-600'
-              : 'bg-slate-400'
-          }`}>
-            {student.avatar}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-slate-900 dark:text-white truncate">{student.name}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{student.department} • {student.year}</p>
-            <div className="flex items-center mt-1">
-              <span className="text-amber-500 text-xs">★</span>
-              <span className="text-xs text-slate-600 dark:text-slate-300 ml-0.5">{student.rating}</span>
-            </div>
-          </div>
-          <span className={`w-2 h-2 rounded-full ${student.available ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
         </div>
       ))}
     </div>

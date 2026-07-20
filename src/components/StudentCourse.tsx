@@ -209,12 +209,22 @@ const StudentCourse: React.FC = () => {
   };
 
   const submitFeedback = async () => {
+    if (rating === 0) {
+      setError('Please select a rating before submitting feedback');
+      return;
+    }
     setSubmitting(true);
+    setError('');
     try {
       await fetchJSON(`/requests/${requestId}`, {
         method: 'PUT',
         body: JSON.stringify({ feedback: { rating, comment } })
       });
+      setEnrollment((prev) => prev ? { ...prev, feedback: { rating, comment } } : prev);
+      setComment('');
+      setRating(0);
+      setError('Feedback submitted successfully');
+      setTimeout(() => setError(''), 3000);
     } catch (err: any) {
       setError(err.message || 'Failed to submit feedback');
     } finally {
