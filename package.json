@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@types/multer": "^2.2.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.1",
     "dotenv": "^16.4.1",
     "express": "^5.2.1",
@@ -23,6 +24,7 @@
     "react-router-dom": "^6.30.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/mongoose": "^5.11.96",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
