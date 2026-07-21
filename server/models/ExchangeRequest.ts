@@ -6,7 +6,7 @@ export interface ICertificate {
   issuedAt: string;
 }
 
-export interface IExchangeRequest extends Document {
+export interface IExchangeRequest extends Document<string> {
   _id: string;
   requester: { _id: string; name: string };
   responder: { _id: string; name: string };
@@ -41,7 +41,7 @@ export interface IExchangeRequest extends Document {
 }
 
 const ExchangeRequestSchema = new Schema<IExchangeRequest>({
-  _id: { type: String, required: true },
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   requester: { _id: { type: String, required: true }, name: { type: String, required: true } },
   responder: { _id: { type: String, required: true }, name: { type: String, required: true } },
   skillRequested: {

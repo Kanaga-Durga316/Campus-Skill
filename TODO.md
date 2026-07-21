@@ -1,32 +1,54 @@
-# MongoDB Complete CRUD Implementation
+# Production Deployment - Implementation Steps
 
-## Steps
+## Step 1: Install `helmet` dependency
+- [ ] Install `helmet` npm package
 
-### Step 1: Update `server/models/index.ts`
-- [ ] Export `Notification` and `Review` from models
+## Step 2: Create `.env.example`
+- [ ] Create `.env.example` with all required variables
 
-### Step 2: Update `server/index.ts` — Imports
-- [ ] Import `Notification` and `Review` from `./models/index.js`
+## Step 3: Update `.gitignore`
+- [ ] Add `.env.production`, `dist-server/`, `Procfile`, `render.yaml`, `vercel.json`
 
-### Step 3: Add NOTIFICATION Routes
-- [ ] `GET /api/notifications/:userId` — Get notifications for a user
-- [ ] `POST /api/notifications` — Create notification
-- [ ] `PUT /api/notifications/:id` — Mark notification read
-- [ ] `DELETE /api/notifications/:id` — Delete notification
+## Step 4: Update all Models to auto-generate `_id`
+- [ ] `User.ts`
+- [ ] `Skill.ts`
+- [ ] `LearnSkill.ts`
+- [ ] `ExchangeRequest.ts`
+- [ ] `Message.ts`
+- [ ] `Notification.ts`
+- [ ] `Review.ts`
 
-### Step 4: Add REVIEW Routes
-- [ ] `GET /api/reviews/skill/:skillId` — Reviews for a skill
-- [ ] `GET /api/reviews/user/:userId` — Reviews about a user
-- [ ] `POST /api/reviews` — Create review (auth required)
-- [ ] `PUT /api/reviews/:id` — Update review (owner only)
-- [ ] `DELETE /api/reviews/:id` — Delete review (owner only)
+## Step 5: Update `config/db.ts` for MongoDB Atlas + optimized connection
+- [ ] Add connection pooling, retry logic, remove default localhost
 
-### Step 5: Add Auto-Notification Triggers
-- [ ] Notify responder when exchange request is created
-- [ ] Notify requester when request is accepted/rejected
-- [ ] Notify recipient when message is sent
+## Step 6: Update `server/index.ts`
+- [ ] Remove demo mode (`nid()`, `idCounter`, `seedDatabase()`)
+- [ ] Add `helmet` security headers
+- [ ] Configure CORS for production domains
+- [ ] Add production static file serving
+- [ ] Require `JWT_SECRET` in production
+- [ ] Remove all `_id: nid()` calls
 
-### Step 6: Verify & Test
-- [ ] Run TypeScript compiler to check for errors
-- [ ] Start server and verify routes
+## Step 7: Update `package.json`
+- [ ] Fix build script for server TypeScript compilation
+- [ ] Add `start` script for production
+
+## Step 8: Update `tsconfig.server.json`
+- [ ] Configure proper ESNext output for production
+
+## Step 9: Update `vite.config.ts`
+- [ ] Configure production API URL handling
+
+## Step 10: Create `render.yaml`
+- [ ] Render deployment configuration
+
+## Step 11: Create `vercel.json`
+- [ ] Vercel SPA rewrites configuration
+
+## Step 12: Create `Procfile`
+- [ ] Render web process command
+
+## Step 13: Final verification
+- [ ] Verify no demo mode remnants remain
+- [ ] Verify all environment variables are documented
 

@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface ILearnSkill extends Document {
+export interface ILearnSkill extends Document<string> {
   _id: string;
   title: string;
   description?: string;
@@ -15,7 +15,7 @@ export interface ILearnSkill extends Document {
 }
 
 const LearnSkillSchema = new Schema<ILearnSkill>({
-  _id: { type: String, required: true },
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
   category: { type: String, default: '' },

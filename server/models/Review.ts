@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface IReview extends Document {
+export interface IReview extends Document<string> {
   _id: string;
   requestId: string;
   skillId: string;
@@ -13,7 +13,7 @@ export interface IReview extends Document {
 }
 
 const ReviewSchema = new Schema<IReview>({
-  _id: { type: String, required: true },
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   requestId: { type: String, required: true },
   skillId: { type: String, required: true },
   reviewerId: { type: String, required: true },

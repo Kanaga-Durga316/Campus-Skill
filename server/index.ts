@@ -1,8 +1,23 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
-import { generateToken, verifyToken, hashPassword, comparePassword } from './utils/auth.js';
-import { authMiddleware, AuthRequest } from './utils/middleware.js';
+import mongoose from 'mongoose';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { generateToken, hashPassword, comparePassword } from './utils/auth.js';
+import {
+  authMiddleware,
+  AuthRequest,
+  asyncHandler,
+  AppError,
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  errorHandler,
+  requireFields,
+  isValidEmail,
+} from './utils/middleware.js';
 import { uploadNotes } from './utils/upload.js';
 import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
 import { connectDatabase } from '../config/db.js';
@@ -10,317 +25,187 @@ import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use('/uploads', express.static('uploads'));
 
-let idCounter = 1000;
-const nid = () => `demo_${++idCounter}`;
+// ===== Security Headers (Helmet) =====
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    contentSecurityPolicy: false,
+  })
+);
 
-async function seedDatabase() {
-  const userCount = await User.countDocuments().exec();
-  if (userCount > 0) return;
+// ===== CORS Configuration =====
+const FRONTEND_URL = process.env.FRONTEND_URL;
+const ALLOWED_ORIGINS = FRONTEND_URL
+  ? [FRONTEND_URL]
+  : ['http://localhost:5173', 'http://localhost:4173'];
 
-  const demoPassword = await hashPassword('demo1234');
-
-  await User.insertMany([
-    {
-      _id: 'demo_user_1',
-      name: 'Alex Student',
-      email: 'alex@campus.edu',
-      password: demoPassword,
-      role: 'student',
-      bio: 'Curious learner exploring programming and design.',
-      avatarUrl: '',
-      location: 'Campus North',
-      preferredMode: 'online',
-      experienceLevel: 'beginner',
-      sessionDurationHours: 1,
-      portfolioLinks: ['https://github.com/alex'],
-      verificationStatus: 'verified',
-      skills: [],
-    },
-    {
-      _id: 'demo_user_2',
-      name: 'Sam Teacher',
-      email: 'sam@campus.edu',
-      password: demoPassword,
-      role: 'teacher',
-      bio: 'Senior CS student who loves teaching Python & Web Dev.',
-      avatarUrl: '',
-      location: 'Campus South',
-      preferredMode: 'hybrid',
-      experienceLevel: 'advanced',
-      sessionDurationHours: 2,
-      portfolioLinks: ['https://github.com/sam'],
-      verificationStatus: 'verified',
-      skills: [],
-    },
-  ]);
-
-  await Skill.insertMany([
-    {
-      _id: 'demo_skill_1',
-      title: 'Python Programming',
-      description: 'Learn Python from scratch with hands-on exercises.',
-      category: 'Programming',
-      tags: ['python', 'coding'],
-      level: 'Beginner',
-      owner: { _id: 'demo_user_2', name: 'Sam Teacher' },
-      availability: true,
-      rating: 4.8,
-      courseDescription: 'A friendly introduction to Python fundamentals.',
-      notes: '',
-      notesFile: '',
-      videoLinks: ['https://youtube.com/watch?v=rfscVS0vtbw'],
-      recordedVideoLinks: [],
-      liveClassLink: 'https://meet.google.com/demo-python',
-      referenceLinks: ['https://docs.python.org/3/tutorial/'],
-      assignments: ['Write a function that prints the Fibonacci sequence.'],
-      githubLink: 'https://github.com/sam/python-demo',
-      difficulty: 'Beginner',
-      duration: '4 weeks',
-      published: true,
-      thumbnail: '',
-      modules: [
-        {
-          _id: 'demo_mod_1',
-          title: 'Getting Started',
-          description: 'Install Python and run your first script.',
-          notes: 'Use the official installer for your OS.',
-          notesFile: '',
-          videoLinks: [],
-          recordedVideoLinks: [],
-          liveClassLink: '',
-          assignments: [],
-          quizzes: [
-            {
-              _id: 'demo_quiz_1',
-              question: 'How do you print text in Python?',
-              options: ['echo "hi"', 'print("hi")', 'console.log("hi")', 'say("hi")'],
-              correctIndex: 1,
-            },
-          ],
-        },
-      ],
-    },
-    {
-      _id: 'demo_skill_2',
-      title: 'Public Speaking',
-      description: 'Overcome stage fright and deliver confident talks.',
-      category: 'Communication',
-      tags: ['speaking', 'confidence'],
-      level: 'All Levels',
-      owner: { _id: 'demo_user_2', name: 'Sam Teacher' },
-      availability: true,
-      rating: 4.6,
-      courseDescription: 'Practical techniques for clear, engaging speeches.',
-      notes: '',
-      notesFile: '',
-      videoLinks: [],
-      recordedVideoLinks: [],
-      liveClassLink: '',
-      referenceLinks: [],
-      assignments: [],
-      githubLink: '',
-      difficulty: 'Beginner',
-      duration: '2 weeks',
-      published: true,
-      thumbnail: '',
-      modules: [],
-    },
-  ]);
-
-  await LearnSkill.insertMany([
-    {
-      _id: 'demo_learn_1',
-      title: 'Guitar for Beginners',
-      description: 'I want to learn basic chords and strumming.',
-      category: 'Music',
-      tags: ['guitar', 'music'],
-      level: 'Beginner',
-      owner: { _id: 'demo_user_1', name: 'Alex Student' },
-      availability: true,
-      rating: 0,
-    },
-  ]);
-
-  const skillRequested = await Skill.findById('demo_skill_1').lean().exec();
-  await ExchangeRequest.insertMany([
-    {
-      _id: 'demo_req_1',
-      requester: { _id: 'demo_user_1', name: 'Alex Student' },
-      responder: { _id: 'demo_user_2', name: 'Sam Teacher' },
-      skillRequested: {
-        _id: 'demo_skill_1',
-        title: 'Python Programming',
-        category: 'Programming',
-        level: 'Beginner',
-        courseDescription: 'A friendly introduction to Python fundamentals.',
-        difficulty: 'Beginner',
-        duration: '4 weeks',
-        liveClassLink: 'https://meet.google.com/demo-python',
-        modules: [
-          {
-            _id: 'demo_mod_1',
-            title: 'Getting Started',
-            description: 'Install Python and run your first script.',
-            notes: 'Use the official installer for your OS.',
-            notesFile: '',
-            videoLinks: [],
-            recordedVideoLinks: [],
-            liveClassLink: '',
-            assignments: [],
-            quizzes: [
-              {
-                _id: 'demo_quiz_1',
-                question: 'How do you print text in Python?',
-                options: ['echo "hi"', 'print("hi")', 'console.log("hi")', 'say("hi")'],
-                correctIndex: 1,
-              },
-            ],
-          },
-        ],
-      },
-      skillOffered: {
-        _id: 'demo_learn_1',
-        title: 'Guitar for Beginners',
-      },
-      status: 'accepted',
-      message: 'Hi! I would love to learn Python in exchange for guitar lessons.',
-      scheduledAt: '',
-      progress: 35,
-      completedModules: ['demo_mod_1'],
-      quizScore: 1,
-      quizTotal: 1,
-      quizStatus: 'passed',
-      assignmentStatus: 'submitted',
-      assignmentText: 'Here is my Fibonacci function.',
-      liveClassAttended: true,
-      feedback: { rating: 0, comment: '' },
-      certificate: { issued: false, certificateId: '', issuedAt: '' },
-      completedAt: '',
-      createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      updatedAt: new Date(Date.now() - 3600000).toISOString(),
-    },
-  ]);
+if (process.env.NODE_ENV === 'production' && !FRONTEND_URL) {
+  console.warn(
+    'WARNING: FRONTEND_URL environment variable is not set. CORS will be permissive in production. Set it to your Vercel deployment URL.'
+  );
 }
 
-// Health check
-app.get('/api/health', (_req: Request, res: Response) => res.json({ ok: true }));
+app.use(
+  cors({
+    origin: process.env.NODE_ENV === 'production' && FRONTEND_URL
+      ? FRONTEND_URL
+      : ALLOWED_ORIGINS,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+app.use(express.json({ limit: '15mb' }));
+app.use('/uploads', express.static('uploads'));
+
+// ===== Production Check: Ensure required env vars are set =====
+if (process.env.NODE_ENV === 'production') {
+  if (!process.env.JWT_SECRET) {
+    console.error('FATAL: JWT_SECRET environment variable is not set in production.');
+    console.error('Generate a strong secret: openssl rand -base64 64');
+    process.exit(1);
+  }
+}
+
+// ===== HELPERS =====
+
+function sanitizeUser(user: any) {
+  if (!user) return user;
+  const { skills: _s, password: _p, ...rest } = user;
+  return rest;
+}
+
+function toArr(v: any): string[] {
+  return typeof v === 'string'
+    ? v.split(',').map((s: string) => s.trim()).filter(Boolean)
+    : Array.isArray(v)
+      ? v.map((s: any) => String(s).trim()).filter(Boolean)
+      : [];
+}
+
+function paramId(req: Request, name: string = 'id'): string {
+  const val = req.params[name];
+  return Array.isArray(val) ? val[0] : val || '';
+}
+
+// ===== Production Static File Serving =====
+const distPath = path.join(__dirname, '..', 'dist');
+app.use(express.static(distPath));
+
+// ===== HEALTH =====
+
+app.get(
+  '/api/health',
+  asyncHandler(async (_req: Request, res: Response) => {
+    res.json({ ok: true, uptime: process.uptime() });
+  })
+);
 
 // ===== AUTH ROUTES =====
-app.post('/api/auth/register', async (req: Request, res: Response) => {
-  try {
+
+app.post(
+  '/api/auth/register',
+  asyncHandler(async (req: Request, res: Response) => {
     const { name, email, password, role } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email, and password required' });
-    }
+    const missing = requireFields(req.body, ['name', 'email', 'password']);
+    if (missing) throw new AppError(missing, 400);
+
+    if (name.trim().length < 2) throw new AppError('Name must be at least 2 characters', 400);
+    if (!isValidEmail(email)) throw new AppError('Invalid email format', 400);
+    if (password.length < 6) throw new AppError('Password must be at least 6 characters', 400);
+    if (role && !['student', 'teacher'].includes(role)) throw new AppError('Role must be student or teacher', 400);
 
     const existing = await User.findOne({ email }).lean().exec();
-    if (existing) {
-      return res.status(400).json({ error: 'Email already registered' });
-    }
+    if (existing) throw new AppError('Email already registered', 409);
 
     const hashedPassword = await hashPassword(password);
-
     const user = await User.create({
-      _id: nid(),
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       role: role || 'student',
-      bio: '',
-      preferredMode: 'online',
-      experienceLevel: 'beginner',
-      sessionDurationHours: 1,
-      portfolioLinks: [],
-      verificationStatus: 'unverified',
-      skills: [],
     });
 
     const token = generateToken(user._id);
     const userObj = user.toObject ? user.toObject() : user;
-    const { skills: _s, password: _p, ...safeUser } = userObj;
+    const safeUser = sanitizeUser(userObj);
     res.status(201).json({ user: safeUser, token });
-  } catch (err: any) {
-    res.status(500).json({ error: 'Registration failed', details: err.message });
-  }
-});
+  })
+);
 
-app.post('/api/auth/login', async (req: Request, res: Response) => {
-  try {
+app.post(
+  '/api/auth/login',
+  asyncHandler(async (req: Request, res: Response) => {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
+    const missing = requireFields(req.body, ['email', 'password']);
+    if (missing) throw new AppError(missing, 400);
 
-    const user = await User.findOne({ email }).select('+password').lean().exec();
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    if (!isValidEmail(email)) throw new AppError('Invalid email format', 400);
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() })
+      .select('+password')
+      .lean()
+      .exec();
+    if (!user) throw new UnauthorizedError('Invalid email or password');
 
     const isMatch = await comparePassword(password, user.password!);
-    if (!isMatch) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
+    if (!isMatch) throw new UnauthorizedError('Invalid email or password');
 
     const token = generateToken(user._id);
-    const { skills: _s, password: _p, ...safeUser } = user;
+    const safeUser = sanitizeUser(user);
     res.json({ user: safeUser, token });
-  } catch (err) {
-    res.status(500).json({ error: 'Login failed' });
-  }
-});
+  })
+);
 
 // ===== USER ROUTES =====
-app.get('/api/users', async (_req: Request, res: Response) => {
-  try {
+
+app.get(
+  '/api/users',
+  asyncHandler(async (_req: Request, res: Response) => {
     const users = await User.find().lean().exec();
-    const safe = users.map((u: any) => {
-      const { skills: _s, ...rest } = u;
-      return rest;
-    });
+    const safe = users.map(sanitizeUser);
     res.json(safe);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
+  })
+);
 
-app.get('/api/users/:id', async (req: Request, res: Response) => {
-  try {
-    const user = await User.findById(req.params.id).lean().exec();
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const { skills: _s, ...rest } = user;
-    res.json(rest);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch user' });
-  }
-});
+app.get(
+  '/api/users/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+    const user = await User.findById(id).lean().exec();
+    if (!user) throw new NotFoundError('User');
+    res.json(sanitizeUser(user));
+  })
+);
 
-app.put('/api/users/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    if (req.userId !== String(req.params.id) && req.userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+app.put(
+  '/api/users/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (req.userId !== id && req.userId) {
+      throw new ForbiddenError('You can only update your own profile');
     }
 
-    const user = await User.findById(req.params.id).lean().exec();
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
 
-    const {
-      name,
-      bio,
-      avatarUrl,
-      location,
-      preferredMode,
-      experienceLevel,
-      sessionDurationHours,
-      portfolioLinks,
-      verificationStatus,
-    } = req.body;
+    const user = await User.findById(id).lean().exec();
+    if (!user) throw new NotFoundError('User');
+
+    const { name, bio, avatarUrl, location, preferredMode, experienceLevel, sessionDurationHours, portfolioLinks, verificationStatus } = req.body;
 
     const update: any = {};
     if (name !== undefined) update.name = name;
@@ -333,72 +218,61 @@ app.put('/api/users/:id', authMiddleware, async (req: AuthRequest, res: Response
     if (portfolioLinks !== undefined) update.portfolioLinks = portfolioLinks;
     if (verificationStatus !== undefined) update.verificationStatus = verificationStatus;
 
-    const updated = await User.findByIdAndUpdate(req.params.id, update, { new: true }).lean().exec();
-    const { skills: _s, ...rest } = updated!;
-    res.json(rest);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update user' });
-  }
-});
+    const updated = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true }).lean().exec();
+    res.json(sanitizeUser(updated));
+  })
+);
 
 // ===== SKILL ROUTES =====
-app.get('/api/skills', async (req: Request, res: Response) => {
-  try {
+
+app.get(
+  '/api/skills',
+  asyncHandler(async (req: Request, res: Response) => {
     const { search } = req.query;
     const query: any = {};
     if (search) {
       const q = String(search);
-      query.$or = [
-        { title: { $regex: q, $options: 'i' } },
-        { description: { $regex: q, $options: 'i' } },
-        { tags: { $in: [new RegExp(q, 'i')] } },
-      ];
+      if (q.trim().length > 0) {
+        query.$or = [
+          { title: { $regex: q, $options: 'i' } },
+          { description: { $regex: q, $options: 'i' } },
+          { tags: { $in: [new RegExp(q, 'i')] } },
+        ];
+      }
     }
     const result = await Skill.find(query).lean().exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch skills' });
-  }
-});
+  })
+);
 
-app.get('/api/skills/:id', async (req: Request, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    res.json(skill);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch skill' });
-  }
-});
-
-app.post('/api/skills', authMiddleware, uploadNotes, async (req: AuthRequest, res: Response) => {
-  try {
-    const {
-      title,
-      description,
-      category,
-      tags,
-      level,
-      courseDescription,
-      notes,
-      videoLinks,
-      recordedVideoLinks,
-      liveClassLink,
-      referenceLinks,
-      assignments,
-      githubLink,
-      difficulty,
-      duration,
-    } = req.body;
-
-    if (!title) {
-      return res.status(400).json({ error: 'Title is required' });
+app.get(
+  '/api/skills/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
     }
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    res.json(skill);
+  })
+);
+
+app.post(
+  '/api/skills',
+  authMiddleware,
+  uploadNotes,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { title, description, category, tags, level, courseDescription, notes, videoLinks, recordedVideoLinks, liveClassLink, referenceLinks, assignments, githubLink, difficulty, duration } = req.body;
+
+    if (!title || title.trim().length === 0) throw new AppError('Title is required', 400);
+    if (title.trim().length > 200) throw new AppError('Title must be under 200 characters', 400);
 
     const ownerUser = await User.findById(req.userId).lean().exec();
+    if (!ownerUser) throw new NotFoundError('User');
+
     const skill = await Skill.create({
-      _id: nid(),
-      title,
+      title: title.trim(),
       description,
       category,
       tags: tags || [],
@@ -407,33 +281,37 @@ app.post('/api/skills', authMiddleware, uploadNotes, async (req: AuthRequest, re
       courseDescription,
       notes,
       notesFile: req.file ? req.file.filename : undefined,
-      videoLinks: typeof videoLinks === 'string' ? videoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : videoLinks || [],
-      recordedVideoLinks: typeof recordedVideoLinks === 'string' ? recordedVideoLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : recordedVideoLinks || [],
+      videoLinks: toArr(videoLinks),
+      recordedVideoLinks: toArr(recordedVideoLinks),
       liveClassLink,
-      referenceLinks: typeof referenceLinks === 'string' ? referenceLinks.split(',').map((s: string) => s.trim()).filter(Boolean) : referenceLinks || [],
-      assignments: typeof assignments === 'string' ? assignments.split(',').map((s: string) => s.trim()).filter(Boolean) : assignments || [],
+      referenceLinks: toArr(referenceLinks),
+      assignments: toArr(assignments),
       githubLink,
       difficulty,
       duration,
-      published: false,
-      modules: [],
-      rating: 0,
     });
-    res.status(201).json(skill);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to create skill' });
-  }
-});
 
-app.put('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    res.status(201).json(skill);
+  })
+);
+
+app.put(
+  '/api/skills/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
     }
 
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('You do not own this skill');
+
     const { title, description, category, tags, level, availability, rating } = req.body;
+    const update: any = {};
+    if (title !== undefined) update.title = title;
+    if (description !== undefined) update.description = description;
     const update: any = {};
     if (title !== undefined) update.title = title;
     if (description !== undefined) update.description = description;
@@ -443,76 +321,75 @@ app.put('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Respons
     if (availability !== undefined) update.availability = availability;
     if (rating !== undefined) update.rating = rating;
 
-    const updated = await Skill.findByIdAndUpdate(req.params.id, update, { new: true }).lean().exec();
+    const updated = await Skill.findByIdAndUpdate(id, update, { new: true }).lean().exec();
     res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update skill' });
-  }
-});
+  })
+);
 
-app.delete('/api/skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+app.delete(
+  '/api/skills/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
     }
-    await Skill.findByIdAndDelete(req.params.id).exec();
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('You do not own this skill');
+
+    await Skill.findByIdAndDelete(id).exec();
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete skill' });
-  }
-});
+  })
+);
 
 // ===== COURSE MANAGEMENT ROUTES (owner-only) =====
-const toArr = (v: any): string[] =>
-  typeof v === 'string'
-    ? v.split(',').map((s: string) => s.trim()).filter(Boolean)
-    : Array.isArray(v)
-      ? v.map((s: any) => String(s).trim()).filter(Boolean)
-      : [];
 
-app.post('/api/skills/:id/modules', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+app.post(
+  '/api/skills/:id/modules',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can add modules');
 
     const { title, description } = req.body;
-    if (!title) return res.status(400).json({ error: 'Module title is required' });
+    if (!title) throw new AppError('Module title is required', 400);
 
     const newModule = {
-      _id: nid(),
       title,
       description,
-      notes: '',
-      notesFile: '',
-      videoLinks: [],
-      recordedVideoLinks: [],
-      liveClassLink: '',
-      assignments: [],
-      quizzes: [],
     };
 
-    await Skill.findByIdAndUpdate(req.params.id, {
-      $push: { modules: newModule },
-    }).exec();
-
-    const updated = await Skill.findById(req.params.id).lean().exec();
+    await Skill.findByIdAndUpdate(id, { $push: { modules: newModule } }).exec();
+    const updated = await Skill.findById(id).lean().exec();
     res.status(201).json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to add module' });
-  }
-});
+  })
+);
 
-app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+app.put(
+  '/api/skills/:id/modules/:moduleId',
+  authMiddleware,
+  uploadNotes,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
 
-    const module = skill.modules.find((m: any) => m._id === String(req.params.moduleId));
-    if (!module) return res.status(404).json({ error: 'Module not found' });
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can update modules');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
 
     const { title, description, notes, liveClassLink, videoLinks, recordedVideoLinks, assignments } = req.body;
     const update: any = {};
@@ -525,79 +402,91 @@ app.put('/api/skills/:id/modules/:moduleId', authMiddleware, uploadNotes, async 
     if (assignments !== undefined) update['modules.$.assignments'] = toArr(assignments);
     if (req.file) update['modules.$.notesFile'] = req.file.filename;
 
-    await Skill.updateOne(
-      { _id: req.params.id, 'modules._id': req.params.moduleId },
-      { $set: update }
-    ).exec();
-
-    const updated = await Skill.findById(req.params.id).lean().exec();
+    await Skill.updateOne({ _id: id, 'modules._id': moduleId }, { $set: update }).exec();
+    const updated = await Skill.findById(id).lean().exec();
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update module' });
-  }
-});
+  })
+);
 
-app.delete('/api/skills/:id/modules/:moduleId', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+app.delete(
+  '/api/skills/:id/modules/:moduleId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
 
-    const module = skill.modules.find((m: any) => m._id === String(req.params.moduleId));
-    if (!module) return res.status(404).json({ error: 'Module not found' });
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can delete modules');
 
-    await Skill.updateOne(
-      { _id: req.params.id },
-      { $pull: { modules: { _id: req.params.moduleId } } }
-    ).exec();
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
 
+    await Skill.updateOne({ _id: id }, { $pull: { modules: { _id: moduleId } } }).exec();
     res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to delete module' });
-  }
-});
+  })
+);
 
-app.post('/api/skills/:id/modules/:moduleId/quizzes', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+// ===== QUIZ ROUTES =====
 
-    const module = skill.modules.find((m: any) => m._id === String(req.params.moduleId));
-    if (!module) return res.status(404).json({ error: 'Module not found' });
+app.post(
+  '/api/skills/:id/modules/:moduleId/quizzes',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can add quizzes');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
 
     const { question, options, correctIndex } = req.body;
-    if (!question) return res.status(400).json({ error: 'Question is required' });
+    if (!question) throw new AppError('Question is required', 400);
 
     const newQuiz = {
-      _id: nid(),
       question,
       options: toArr(options),
       correctIndex: typeof correctIndex === 'number' ? correctIndex : 0,
     };
 
     await Skill.updateOne(
-      { _id: req.params.id, 'modules._id': req.params.moduleId },
+      { _id: id, 'modules._id': moduleId },
       { $push: { 'modules.$.quizzes': newQuiz } }
     ).exec();
 
-    const updated = await Skill.findById(req.params.id).lean().exec();
+    const updated = await Skill.findById(id).lean().exec();
     res.status(201).json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to add quiz' });
-  }
-});
+  })
+);
 
-app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+app.put(
+  '/api/skills/:id/modules/:moduleId/quizzes/:quizId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    const quizId = paramId(req, 'quizId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
 
-    const module = skill.modules.find((m: any) => m._id === String(req.params.moduleId));
-    if (!module) return res.status(404).json({ error: 'Module not found' });
-    const quiz = module.quizzes.find((q: any) => q._id === String(req.params.quizId));
-    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can update quizzes');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
+    const quiz = mod.quizzes.find((q: any) => q._id === quizId);
+    if (!quiz) throw new NotFoundError('Quiz');
 
     const { question, options, correctIndex } = req.body;
     const update: any = {};
@@ -606,44 +495,56 @@ app.put('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, asy
     if (correctIndex !== undefined) update['modules.$.quizzes.$.correctIndex'] = correctIndex;
 
     await Skill.updateOne(
-      { _id: req.params.id, 'modules._id': req.params.moduleId, 'modules.quizzes._id': req.params.quizId },
+      { _id: id, 'modules._id': moduleId, 'modules.quizzes._id': quizId },
       { $set: update }
     ).exec();
 
-    const updated = await Skill.findById(req.params.id).lean().exec();
+    const updated = await Skill.findById(id).lean().exec();
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update quiz' });
-  }
-});
+  })
+);
 
-app.delete('/api/skills/:id/modules/:moduleId/quizzes/:quizId', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+app.delete(
+  '/api/skills/:id/modules/:moduleId/quizzes/:quizId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    const quizId = paramId(req, 'quizId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
 
-    const module = skill.modules.find((m: any) => m._id === String(req.params.moduleId));
-    if (!module) return res.status(404).json({ error: 'Module not found' });
-    const quiz = module.quizzes.find((q: any) => q._id === String(req.params.quizId));
-    if (!quiz) return res.status(404).json({ error: 'Quiz not found' });
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can delete quizzes');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
+    const quiz = mod.quizzes.find((q: any) => q._id === quizId);
+    if (!quiz) throw new NotFoundError('Quiz');
 
     await Skill.updateOne(
-      { _id: req.params.id, 'modules._id': req.params.moduleId },
-      { $pull: { 'modules.$.quizzes': { _id: req.params.quizId } } }
+      { _id: id, 'modules._id': moduleId },
+      { $pull: { 'modules.$.quizzes': { _id: quizId } } }
     ).exec();
 
     res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to delete quiz' });
-  }
-});
+  })
+);
 
-app.patch('/api/skills/:id/publish', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await Skill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+app.patch(
+  '/api/skills/:id/publish',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can publish');
 
     const { published, courseDescription, difficulty, duration, liveClassLink } = req.body;
     const update: any = {};
@@ -653,61 +554,68 @@ app.patch('/api/skills/:id/publish', authMiddleware, async (req: AuthRequest, re
     if (duration !== undefined) update.duration = duration;
     if (liveClassLink !== undefined) update.liveClassLink = liveClassLink;
 
-    const updated = await Skill.findByIdAndUpdate(req.params.id, update, { new: true }).lean().exec();
+    const updated = await Skill.findByIdAndUpdate(id, update, { new: true }).lean().exec();
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to publish course' });
-  }
-});
+  })
+);
 
 // ===== LEARN-SKILLS ROUTES =====
-app.get('/api/learn-skills', async (_req: Request, res: Response) => {
-  try {
+
+app.get(
+  '/api/learn-skills',
+  asyncHandler(async (_req: Request, res: Response) => {
     const result = await LearnSkill.find().lean().exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch learn skills' });
-  }
-});
+  })
+);
 
-app.get('/api/learn-skills/:id', async (req: Request, res: Response) => {
-  try {
-    const skill = await LearnSkill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
+app.get(
+  '/api/learn-skills/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid learn skill ID format', 400);
+    }
+    const skill = await LearnSkill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Learn skill');
     res.json(skill);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch learn skill' });
-  }
-});
+  })
+);
 
-app.post('/api/learn-skills', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
+app.post(
+  '/api/learn-skills',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { title, description, category, tags, level } = req.body;
-    if (!title) return res.status(400).json({ error: 'Title is required' });
+    if (!title || title.trim().length === 0) throw new AppError('Title is required', 400);
 
     const ownerUser = await User.findById(req.userId).lean().exec();
+
     const skill = await LearnSkill.create({
-      _id: nid(),
-      title,
+      title: title.trim(),
       description,
       category,
       tags: tags || [],
       level,
       owner: { _id: req.userId, name: ownerUser?.name || 'You' },
-      availability: true,
-      rating: 0,
     });
-    res.status(201).json(skill);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to create learn skill' });
-  }
-});
 
-app.put('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await LearnSkill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
+    res.status(201).json(skill);
+  })
+);
+
+app.put(
+  '/api/learn-skills/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid learn skill ID format', 400);
+    }
+
+    const skill = await LearnSkill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Learn skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('You do not own this learn skill');
 
     const { title, description, category, tags, level, availability, rating } = req.body;
     const update: any = {};
@@ -719,85 +627,99 @@ app.put('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: R
     if (availability !== undefined) update.availability = availability;
     if (rating !== undefined) update.rating = rating;
 
-    const updated = await LearnSkill.findByIdAndUpdate(req.params.id, update, { new: true }).lean().exec();
+    const updated = await LearnSkill.findByIdAndUpdate(id, update, { new: true }).lean().exec();
     res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update learn skill' });
-  }
-});
+  })
+);
 
-app.delete('/api/learn-skills/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const skill = await LearnSkill.findById(req.params.id).lean().exec();
-    if (!skill) return res.status(404).json({ error: 'Learn skill not found' });
-    if (skill.owner._id !== req.userId) return res.status(403).json({ error: 'Unauthorized' });
-    await LearnSkill.findByIdAndDelete(req.params.id).exec();
+app.delete(
+  '/api/learn-skills/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid learn skill ID format', 400);
+    }
+
+    const skill = await LearnSkill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Learn skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('You do not own this learn skill');
+
+    await LearnSkill.findByIdAndDelete(id).exec();
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete learn skill' });
-  }
-});
+  })
+);
 
 // ===== EXCHANGE REQUEST ROUTES =====
-app.get('/api/requests', async (_req: Request, res: Response) => {
-  try {
+
+app.get(
+  '/api/requests',
+  asyncHandler(async (_req: Request, res: Response) => {
     const result = await ExchangeRequest.find().lean().exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch requests' });
-  }
-});
+  })
+);
 
-app.get('/api/requests/enrollments', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
+app.get(
+  '/api/requests/enrollments',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await ExchangeRequest.find({ 'requester._id': req.userId })
-      .where('status').in(['accepted', 'completed'])
+      .where('status')
+      .in(['accepted', 'completed'])
       .sort({ updatedAt: -1 })
       .lean()
       .exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch enrollments' });
-  }
-});
+  })
+);
 
-app.get('/api/requests/teacher', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
+app.get(
+  '/api/requests/teacher',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await ExchangeRequest.find({ 'responder._id': req.userId })
       .sort({ updatedAt: -1 })
       .lean()
       .exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch teacher requests' });
-  }
-});
+  })
+);
 
-app.get('/api/requests/:id', async (req: Request, res: Response) => {
-  try {
-    const request = await ExchangeRequest.findById(req.params.id).lean().exec();
-    if (!request) return res.status(404).json({ error: 'Request not found' });
+app.get(
+  '/api/requests/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
     res.json(request);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch request' });
-  }
-});
+  })
+);
 
-app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
+app.post(
+  '/api/requests',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { responderId, skillRequestedId, skillOfferedId, message } = req.body;
 
-    if (!responderId || !skillRequestedId) {
-      return res.status(400).json({ error: 'Responder and skill requested required' });
-    }
+    if (!responderId) throw new AppError('Responder ID is required', 400);
+    if (!skillRequestedId) throw new AppError('Skill requested ID is required', 400);
 
-    const responder = await User.findById(responderId).lean().exec();
-    const requester = await User.findById(req.userId).lean().exec();
-    const skillRequested = await Skill.findById(skillRequestedId).lean().exec();
+    const [responder, requester, skillRequested] = await Promise.all([
+      User.findById(responderId).lean().exec(),
+      User.findById(req.userId).lean().exec(),
+      Skill.findById(skillRequestedId).lean().exec(),
+    ]);
+
+    if (!responder) throw new NotFoundError('Responder user');
+    if (!requester) throw new NotFoundError('Requester user');
+
     const skillOffered = skillOfferedId ? await LearnSkill.findById(skillOfferedId).lean().exec() : null;
 
     const request = await ExchangeRequest.create({
-      _id: nid(),
       requester: { _id: req.userId, name: requester?.name || 'You' },
       responder: { _id: responderId, name: responder?.name || 'Unknown' },
       skillRequested: skillRequested
@@ -813,9 +735,11 @@ app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response
             modules: skillRequested.modules,
           }
         : { _id: skillRequestedId, title: 'Unknown Skill' },
-      skillOffered: skillOffered ? { _id: skillOffered._id, title: skillOffered.title } : { _id: skillOfferedId, title: '—' },
+      skillOffered: skillOffered
+        ? { _id: skillOffered._id, title: skillOffered.title }
+        : { _id: skillOfferedId || '', title: '—' },
       status: 'open',
-      message,
+      message: message || '',
       scheduledAt: '',
       progress: 0,
       completedModules: [],
@@ -834,7 +758,6 @@ app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response
 
     // Auto-notify responder about the new exchange request
     await Notification.create({
-      _id: nid(),
       userId: responderId,
       type: 'request',
       message: `${requester?.name || 'Someone'} sent you an exchange request for ${skillRequested?.title || 'a skill'}.`,
@@ -843,34 +766,38 @@ app.post('/api/requests', authMiddleware, async (req: AuthRequest, res: Response
     });
 
     res.status(201).json(request);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create request' });
-  }
-});
+  })
+);
 
-app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const request = await ExchangeRequest.findById(req.params.id).lean().exec();
-    if (!request) return res.status(404).json({ error: 'Request not found' });
+app.put(
+  '/api/requests/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
 
     const isRequester = request.requester._id === req.userId;
     const isResponder = request.responder._id === req.userId;
-    if (!isRequester && !isResponder) return res.status(403).json({ error: 'Unauthorized' });
+    if (!isRequester && !isResponder) throw new ForbiddenError('You are not part of this exchange');
 
-    const {
-      status, message, scheduledAt,
-      completedModules, assignmentText, answers, liveClassAttended,
-      assignmentStatus, feedback,
-    } = req.body;
+    const { status, message, scheduledAt, completedModules, assignmentText, answers, liveClassAttended, assignmentStatus, feedback } = req.body;
 
     const update: any = {};
 
     if (status !== undefined) {
       if ((status === 'accepted' || status === 'rejected') && !isResponder) {
-        return res.status(403).json({ error: 'Only the teacher can accept or reject' });
+        throw new ForbiddenError('Only the teacher can accept or reject');
       }
       if (status === 'cancelled' && !isRequester) {
-        return res.status(403).json({ error: 'Only the student can cancel' });
+        throw new ForbiddenError('Only the student can cancel');
+      }
+      if (!['open', 'pending', 'accepted', 'rejected', 'cancelled', 'completed'].includes(status)) {
+        throw new AppError('Invalid status value', 400);
       }
       update.status = status;
       if (status === 'completed' && !request.completedAt) {
@@ -882,26 +809,23 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
     if (scheduledAt !== undefined) update.scheduledAt = scheduledAt;
 
     if (assignmentStatus !== undefined) {
-      if (!isResponder) return res.status(403).json({ error: 'Only the teacher can update assignment status' });
+      if (!isResponder) throw new ForbiddenError('Only the teacher can update assignment status');
+      if (!['not_started', 'submitted', 'graded'].includes(assignmentStatus)) {
+        throw new AppError('Invalid assignment status', 400);
+      }
       update.assignmentStatus = assignmentStatus;
     }
+
     if (feedback !== undefined) {
-      if (!isRequester) return res.status(403).json({ error: 'Only the student can submit feedback' });
+      if (!isRequester) throw new ForbiddenError('Only the student can submit feedback');
       update['feedback.rating'] = feedback.rating;
       update['feedback.comment'] = feedback.comment;
     }
 
     if (completedModules !== undefined || assignmentText !== undefined || answers !== undefined || liveClassAttended !== undefined) {
-      if (!isRequester) return res.status(403).json({ error: 'Only the student can update their learning progress' });
+      if (!isRequester) throw new ForbiddenError('Only the student can update their learning progress');
 
-      if (completedModules !== undefined) {
-        const arr = Array.isArray(completedModules) ? completedModules.map(String) : [];
-        update.completedModules = Array.from(new Set(arr));
-      }
-      if (assignmentText !== undefined) {
-        update.assignmentText = assignmentText;
-        if (assignmentText && assignmentText.trim().length > 0) {
-          update.assignmentStatus = 'submitted';
+
         }
       }
       if (liveClassAttended !== undefined) {
@@ -962,116 +886,150 @@ app.put('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Respo
 
     update.updatedAt = new Date().toISOString();
 
-    const updated = await ExchangeRequest.findByIdAndUpdate(req.params.id, update, { new: true }).lean().exec();
+    const updated = await ExchangeRequest.findByIdAndUpdate(id, update, { new: true })
+      .lean()
+      .exec();
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to update request' });
-  }
-});
+  })
+);
 
-app.delete('/api/requests/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const request = await ExchangeRequest.findById(req.params.id).lean().exec();
-    if (!request) return res.status(404).json({ error: 'Request not found' });
-    if (request.requester._id !== req.userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+app.delete(
+  '/api/requests/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id) && !id.startsWith('demo_')) {
+      throw new AppError('Invalid request ID format', 400);
     }
-    await ExchangeRequest.findByIdAndDelete(req.params.id).exec();
+
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
+    if (request.requester._id !== req.userId) {
+      throw new ForbiddenError('Only the requester can delete a request');
+    }
+
+    await ExchangeRequest.findByIdAndDelete(id).exec();
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete request' });
-  }
-});
+  })
+);
 
 // ===== MESSAGE ROUTES =====
-app.get('/api/messages', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
+
+app.get(
+  '/api/messages',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const result = await Message.find({
-      $or: [
-        { 'from._id': req.userId },
-        { 'to._id': req.userId },
-      ],
-    }).lean().exec();
+      $or: [{ 'from._id': req.userId }, { 'to._id': req.userId }],
+    })
+      .lean()
+      .exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
-});
+  })
+);
 
-app.get('/api/messages/:userId', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const result = await Message.find({
-      $or: [
-        { 'from._id': req.userId, 'to._id': String(req.params.userId) },
-        { 'from._id': String(req.params.userId), 'to._id': req.userId },
-      ],
-    }).sort({ createdAt: 1 }).lean().exec();
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
-});
-
-app.post('/api/messages', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const { toUserId, text } = req.body;
-
-    if (!toUserId || !text) {
-      return res.status(400).json({ error: 'Recipient and text required' });
+app.get(
+  '/api/messages/:userId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const uid = paramId(req, 'userId');
+    if (!mongoose.Types.ObjectId.isValid(uid) && !uid.startsWith('demo_')) {
+      throw new AppError('Invalid user ID format', 400);
     }
 
-    const fromUser = await User.findById(req.userId).lean().exec();
-    const toUser = await User.findById(toUserId).lean().exec();
+    const result = await Message.find({
+      $or: [
+        { 'from._id': req.userId, 'to._id': uid },
+        { 'from._id': uid, 'to._id': req.userId },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/messages',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { toUserId, text } = req.body;
+
+    if (!toUserId) throw new AppError('Recipient is required', 400);
+    if (!text || text.trim().length === 0) throw new AppError('Message text is required', 400);
+
+    const [fromUser, toUser] = await Promise.all([
+      User.findById(req.userId).lean().exec(),
+      User.findById(toUserId).lean().exec(),
+    ]);
+
+    if (!toUser) throw new NotFoundError('Recipient');
 
     const message = await Message.create({
       _id: nid(),
       from: { _id: req.userId, name: fromUser?.name || 'You' },
       to: { _id: toUserId, name: toUser?.name || 'Unknown' },
-      text,
+      text: text.trim(),
       read: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
-    res.status(201).json(message);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to send message' });
-  }
-});
 
-app.put('/api/messages/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
-    const { read } = req.body;
-    const message = await Message.findById(req.params.id).lean().exec();
-    if (!message) return res.status(404).json({ error: 'Message not found' });
-    if (message.to._id !== req.userId) {
-      return res.status(403).json({ error: 'Unauthorized' });
+    res.status(201).json(message);
+  })
+);
+
+app.put(
+  '/api/messages/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id) && !id.startsWith('demo_')) {
+      throw new AppError('Invalid message ID format', 400);
     }
-    const updated = await Message.findByIdAndUpdate(req.params.id, { read }, { new: true }).lean().exec();
+
+    const { read } = req.body;
+    const message = await Message.findById(id).lean().exec();
+    if (!message) throw new NotFoundError('Message');
+    if (message.to._id !== req.userId) {
+      throw new ForbiddenError('Only the recipient can mark a message as read');
+    }
+
+    const updated = await Message.findByIdAndUpdate(id, { read }, { new: true })
+      .lean()
+      .exec();
     res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update message' });
-  }
-});
+  })
+);
 
 // ===== NOTIFICATION ROUTES =====
-app.get('/api/notifications/:userId', async (req: Request, res: Response) => {
-  try {
-    const result = await Notification.find({ userId: req.params.userId })
+
+app.get(
+  '/api/notifications/:userId',
+  asyncHandler(async (req: Request, res: Response) => {
+    const uid = paramId(req, 'userId');
+    if (!mongoose.Types.ObjectId.isValid(uid) && !uid.startsWith('demo_')) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+
+    const result = await Notification.find({ userId: uid })
       .sort({ createdAt: -1 })
       .lean()
       .exec();
     res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch notifications' });
-  }
-});
+  })
+);
 
-app.post('/api/notifications', authMiddleware, async (req: AuthRequest, res: Response) => {
-  try {
+app.post(
+  '/api/notifications',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId, type, message, link } = req.body;
-    if (!userId || !type || !message) {
-      return res.status(400).json({ error: 'userId, type, and message required' });
-    }
+
+    const missing = requireFields(req.body, ['userId', 'type', 'message']);
+    if (missing) throw new AppError(missing, 400);
+
     const notification = await Notification.create({
       _id: nid(),
       userId,
@@ -1080,5 +1038,62 @@ app.post('/api/notifications', authMiddleware, async (req: AuthRequest, res: Res
       read: false,
       link: link || '',
     });
+
     res.status(201).json(notification);
-  } catch (err: any) {
+  })
+);
+
+// ===== REVIEW ROUTES =====
+
+app.get(
+  '/api/reviews',
+  asyncHandler(async (_req: Request, res: Response) => {
+    const result = await Review.find().lean().exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/reviews',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { requestId, skillId, revieweeId, rating, comment } = req.body;
+
+    const missing = requireFields(req.body, ['requestId', 'skillId', 'revieweeId', 'rating']);
+    if (missing) throw new AppError(missing, 400);
+
+    if (typeof rating !== 'number' || rating < 1 || rating > 5) {
+      throw new AppError('Rating must be a number between 1 and 5', 400);
+    }
+
+    const review = await Review.create({
+      _id: nid(),
+      requestId,
+      skillId,
+      reviewerId: req.userId,
+      revieweeId,
+      rating,
+      comment: comment || '',
+    });
+
+    res.status(201).json(review);
+  })
+);
+
+// ===== ERROR HANDLER (must be last) =====
+app.use(errorHandler);
+
+// ===== START SERVER =====
+
+const PORT = process.env.PORT || 3001;
+
+async function start() {
+  await connectDatabase();
+  await seedDatabase();
+  app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+start();
+

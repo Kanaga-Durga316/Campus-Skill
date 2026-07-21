@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface IQuiz extends Document {
+export interface IQuiz extends Document<string> {
   _id: string;
   question: string;
   options: string[];
@@ -8,13 +8,13 @@ export interface IQuiz extends Document {
 }
 
 const QuizSchema = new Schema<IQuiz>({
-  _id: { type: String, required: true },
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   question: { type: String, required: true, trim: true },
   options: { type: [String], required: true },
   correctIndex: { type: Number, required: true, min: 0 },
 });
 
-export interface IModule extends Document {
+export interface IModule extends Document<string> {
   _id: string;
   title: string;
   description?: string;
@@ -28,7 +28,7 @@ export interface IModule extends Document {
 }
 
 const ModuleSchema = new Schema<IModule>({
-  _id: { type: String, required: true },
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
   notes: { type: String, default: '' },
@@ -40,7 +40,7 @@ const ModuleSchema = new Schema<IModule>({
   quizzes: { type: [QuizSchema], default: [] },
 });
 
-export interface ISkill extends Document {
+export interface ISkill extends Document<string> {
   _id: string;
   title: string;
   description?: string;
@@ -69,7 +69,7 @@ export interface ISkill extends Document {
 }
 
 const SkillSchema = new Schema<ISkill>({
-  _id: { type: String, required: true },
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
   title: { type: String, required: true, trim: true },
   description: { type: String, default: '' },
   category: { type: String, default: '' },
