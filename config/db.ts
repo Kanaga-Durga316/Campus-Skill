@@ -3,9 +3,8 @@ import mongoose from 'mongoose';
 // In production, MONGODB_URI must be provided via environment variable.
 // For MongoDB Atlas, use:
 // mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<database>?retryWrites=true&w=majority
-const MONGODB_URI = process.env.MONGODB_URI;
-
 export async function connectDatabase(): Promise<void> {
+  const MONGODB_URI = process.env.MONGODB_URI;
   if (!MONGODB_URI) {
     console.error('FATAL: MONGODB_URI environment variable is not set.');
     console.error('Set it in your .env file or environment (Render dashboard / Vercel env vars).');

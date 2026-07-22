@@ -64,6 +64,10 @@ app.use(
 app.use(express.json({ limit: '15mb' }));
 app.use('/uploads', express.static('uploads'));
 
+// ===== Production Static File Serving =====
+const distPath = path.join(__dirname, '..', 'dist');
+app.use(express.static(distPath));
+
 // ===== Production Check: Ensure required env vars are set =====
 if (process.env.NODE_ENV === 'production') {
   if (!process.env.JWT_SECRET) {
@@ -93,10 +97,6 @@ function paramId(req: Request, name: string = 'id'): string {
   const val = req.params[name];
   return Array.isArray(val) ? val[0] : val || '';
 }
-
-// ===== Production Static File Serving =====
-const distPath = path.join(__dirname, '..', 'dist');
-app.use(express.static(distPath));
 
 // ===== HEALTH =====
 
@@ -309,9 +309,6 @@ app.put(
     if (skill.owner._id !== req.userId) throw new ForbiddenError('You do not own this skill');
 
     const { title, description, category, tags, level, availability, rating } = req.body;
-    const update: any = {};
-    if (title !== undefined) update.title = title;
-    if (description !== undefined) update.description = description;
     const update: any = {};
     if (title !== undefined) update.title = title;
     if (description !== undefined) update.description = description;
@@ -703,6 +700,31 @@ app.post(
   '/api/requests',
   authMiddleware,
   asyncHandler(async (req: AuthRequest, res: Response) => {
+    const result = await ExchangeRequest.find({ 'responder._id': req.userId })
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/requests/:id',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
+    res.json(request);
+  })
+);
+
+app.post(
+  '/api/requests',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { responderId, skillRequestedId, skillOfferedId, message } = req.body;
 
     if (!responderId) throw new AppError('Responder ID is required', 400);
@@ -825,7 +847,14 @@ app.put(
     if (completedModules !== undefined || assignmentText !== undefined || answers !== undefined || liveClassAttended !== undefined) {
       if (!isRequester) throw new ForbiddenError('Only the student can update their learning progress');
 
-
+      if (completedModules !== undefined) {
+        const arr = Array.isArray(completedModules) ? completedModules.map(String) : [];
+        update.completedModules = Array.from(new Set(arr));
+      }
+      if (assignmentText !== undefined) {
+        update.assignmentText = assignmentText;
+        if (assignmentText && assignmentText.trim().length > 0) {
+          update.assignmentStatus = 'submitted';
         }
       }
       if (liveClassAttended !== undefined) {
@@ -1082,6 +1111,66 @@ app.post(
 
 // ===== ERROR HANDLER (must be last) =====
 app.use(errorHandler);
+
+// ===== HELPERS =====
+
+function nid(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+async function seedDatabase(): Promise<void> {
+  const userCount = await User.countDocuments().lean().exec();
+  if (userCount > 0) {
+    console.log(`Seed skipped — ${userCount} users already exist.`);
+    return;
+  }
+
+  console.log('Seeding database...');
+
+  const [teacher, student] = await Promise.all([
+    User.create({
+      name: 'Demo Teacher',
+      email: 'teacher@demo.com',
+      password: await hashPassword('teacher123'),
+      role: 'teacher',
+    }),
+    User.create({
+      name: 'Demo Student',
+      email: 'student@demo.com',
+      password: await hashPassword('student123'),
+      role: 'student',
+    }),
+  ]);
+
+  await Skill.create({
+    title: 'Introduction to Web Development',
+    description: 'Learn HTML, CSS, and JavaScript from scratch. Build responsive websites and understand core web technologies.',
+    category: 'Technology',
+    tags: ['web', 'frontend', 'javascript'],
+    level: 'Beginner',
+    owner: { _id: teacher._id, name: teacher.name },
+    published: true,
+    videoLinks: [],
+    recordedVideoLinks: [],
+    liveClassLink: '',
+    referenceLinks: [],
+    assignments: [],
+    githubLink: '',
+    difficulty: 'Easy',
+    duration: '4 weeks',
+  });
+
+  await LearnSkill.create({
+    title: 'Graphic Design Fundamentals',
+    description: 'Looking for someone to teach me design basics, Figma, and color theory.',
+    category: 'Design',
+    tags: ['design', 'ui', 'figma'],
+    level: 'Beginner',
+    owner: { _id: student._id, name: student.name },
+  });
+
+  console.log('Database seeded successfully.');
+}
 
 // ===== START SERVER =====
 
