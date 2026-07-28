@@ -19,6 +19,7 @@ import TeachDetail from './components/TeachDetail';
 import CourseManagement from './components/CourseManagement';
 import StudentCourse from './components/StudentCourse';
 import StudentProfile from './components/StudentProfile';
+import StudentsList from './components/StudentsList';
 
 /**
  * HomePage Component
@@ -76,6 +77,8 @@ const App: React.FC = () => {
             <Route path="/learn/:requestId" element={<StudentCourse />} />
             {/* Student Profile page route */}
             <Route path="/student/:studentId" element={<StudentProfile />} />
+            {/* Students List page route */}
+            <Route path="/students" element={<StudentsList />} />
           </Routes>
         </div>
       </Router>

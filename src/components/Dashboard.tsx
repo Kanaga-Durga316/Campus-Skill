@@ -421,7 +421,7 @@ const Dashboard: React.FC = () => {
               )}
 
               {/* Suggested Students */}
-              <SuggestedStudentsSection students={suggestedStudents} onViewAll={() => navigate('/search')} onViewProfile={(studentId) => navigate(`/student/${studentId}`)} />
+              <SuggestedStudentsSection students={suggestedStudents} onViewAll={() => navigate('/students')} onViewProfile={(studentId) => navigate(`/student/${studentId}`)} />
             </div>
 
             {/* Right Column - 1/3 width */}
