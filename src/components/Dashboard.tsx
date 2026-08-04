@@ -407,7 +407,7 @@ const Dashboard: React.FC = () => {
                  skills={skillsToLearn}
                  learnSkillRequestMap={learnSkillRequestMap}
                  onOpenCourse={(id) => navigate('/learn/' + id)}
-                 onContinue={(skillId) => navigate(`/skill/${skillId}`)}
+                  onContinue={(skillId) => navigate(`/learn-skill/${skillId}`)}
                />
 
               {teachingRequests.length > 0 && (
