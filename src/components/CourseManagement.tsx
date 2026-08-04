@@ -41,15 +41,20 @@ interface Skill {
   duration?: string;
   liveClassLink?: string;
   published: boolean;
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  submittedAt?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  adminComments?: string;
   modules: Module[];
   rating?: number;
   notes?: string;
   notesFile?: string;
   videoLinks: string[];
   recordedVideoLinks: string[];
-  referenceLinks: string[];
+  referenceLinks?: string[];
   githubLink?: string;
-  assignments: string[];
+  assignments?: string[];
 }
 
 interface FeedbackItem {
@@ -239,9 +244,14 @@ const CourseManagement: React.FC = () => {
     setSaving(true);
     setError('');
     try {
-      await fetchJSON(`/skills/${skillId}/publish`, {
-        method: 'PATCH',
-        body: JSON.stringify(overview)
+      await fetchJSON(`/skills/${skillId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          courseDescription: overview.courseDescription,
+          difficulty: overview.difficulty,
+          duration: overview.duration,
+          liveClassLink: overview.liveClassLink,
+        })
       });
       await loadSkill();
       showMessage('Overview saved');
@@ -252,22 +262,30 @@ const CourseManagement: React.FC = () => {
     }
   };
 
-  const togglePublish = async () => {
+  const submitForApproval = async () => {
     setSaving(true);
     setError('');
     try {
-      await fetchJSON(`/skills/${skillId}/publish`, {
-        method: 'PATCH',
-        body: JSON.stringify({ published: !skill.published })
+      const res: any = await fetchJSON(`/skills/${skillId}/submit`, {
+        method: 'POST'
       });
+      showMessage(res.message || 'Course submitted for approval');
       await loadSkill();
-      showMessage(skill.published ? 'Course unpublished' : 'Course published');
     } catch (err: any) {
-      setError(err.message || 'Failed to publish');
+      setError(err.message || 'Failed to submit');
     } finally {
       setSaving(false);
     }
   };
+
+  const statusConfig = {
+    draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700' },
+    pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700' },
+    approved: { label: 'Live', color: 'bg-green-100 text-green-700' },
+    rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700' },
+    changes_requested: { label: 'Needs Changes', color: 'bg-orange-100 text-orange-700' },
+  };
+  const currentStatus = skill.status as keyof typeof statusConfig || 'draft';
 
   // ===== Module handlers =====
   const openModuleModal = (mod?: Module) => {
@@ -445,16 +463,19 @@ const CourseManagement: React.FC = () => {
                   <p className="text-slate-500 dark:text-slate-400">{skill.category} • {skill.level}</p>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${skill.published ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {skill.published ? '✓ Published' : 'Draft'}
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusConfig[currentStatus]?.color}`}>
+                    {statusConfig[currentStatus]?.label}
                   </span>
-                  <button
-                    onClick={togglePublish}
-                    disabled={saving}
-                    className={`px-4 py-2 rounded-xl font-medium text-sm text-white ${skill.published ? 'bg-slate-500 hover:bg-slate-600' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-                  >
-                    {skill.published ? 'Unpublish' : 'Publish Course'}
-                  </button>
+                  {skill.status === 'rejected' && skill.rejectionReason && (
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700" title={skill.rejectionReason}>
+                      Rejected
+                    </span>
+                  )}
+                  {skill.status === 'changes_requested' && (
+                    <span className="px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-700">
+                      Needs Changes
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -592,13 +613,44 @@ const CourseManagement: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={saveOverview}
-                disabled={saving}
-                className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Save Overview'}
-              </button>
+              {(skill.adminComments || skill.rejectionReason) && skill.status !== 'approved' && skill.status !== 'draft' && (
+                <div className="mb-4 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-300 mb-1">
+                    {skill.status === 'changes_requested' ? 'Admin Feedback:' : 'Rejection Reason:'}
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-200">
+                    {skill.rejectionReason || skill.adminComments}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveOverview}
+                  disabled={saving}
+                  className="px-6 py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Overview'}
+                </button>
+                {skill.status !== 'approved' && skill.status !== 'pending' && (
+                  <button
+                    onClick={submitForApproval}
+                    disabled={saving}
+                    className="px-6 py-3 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {saving ? 'Submitting...' : 'Submit for Approval'}
+                  </button>
+                )}
+                {skill.status === 'changes_requested' && (
+                  <button
+                    onClick={submitForApproval}
+                    disabled={saving}
+                    className="px-6 py-3 bg-amber-600 text-white font-semibold rounded-xl hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {saving ? 'Resubmitting...' : 'Resubmit for Approval'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

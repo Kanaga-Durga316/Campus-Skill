@@ -5,9 +5,10 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { generateToken, hashPassword, comparePassword } from './utils/auth.js';
+import { generateToken, hashPassword, comparePassword, verifyToken } from './utils/auth.js';
 import {
   authMiddleware,
+  adminMiddleware,
   AuthRequest,
   asyncHandler,
   AppError,
@@ -228,8 +229,9 @@ app.put(
 app.get(
   '/api/skills',
   asyncHandler(async (req: Request, res: Response) => {
-    const { search } = req.query;
+    const { search, status } = req.query;
     const query: any = {};
+
     if (search) {
       const q = String(search);
       if (q.trim().length > 0) {
@@ -240,7 +242,25 @@ app.get(
         ];
       }
     }
+
+    // Public search only shows approved courses
+    if (status !== 'all') {
+      query.status = 'approved';
+    }
+
     const result = await Skill.find(query).lean().exec();
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/skills/mine',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const result = await Skill.find({ 'owner._id': req.userId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
     res.json(result);
   })
 );
@@ -254,6 +274,22 @@ app.get(
     }
     const skill = await Skill.findById(id).lean().exec();
     if (!skill) throw new NotFoundError('Skill');
+
+    // Only show approved courses publicly; non-approved are visible only to the owner/admin
+    if (skill.status !== 'approved') {
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      let isOwner = false;
+      if (token) {
+        const decoded = verifyToken(token);
+        if (decoded && decoded.userId === skill.owner._id) {
+          isOwner = true;
+        }
+      }
+      if (!isOwner) {
+        throw new UnauthorizedError('This course is not available');
+      }
+    }
+
     res.json(skill);
   })
 );
@@ -271,7 +307,7 @@ app.post(
     const ownerUser = await User.findById(req.userId).lean().exec();
     if (!ownerUser) throw new NotFoundError('User');
 
-    const skill = await Skill.create({
+     const skill = await Skill.create({
       title: title.trim(),
       description,
       category,
@@ -289,7 +325,23 @@ app.post(
       githubLink,
       difficulty,
       duration,
+      status: 'pending',
+      submittedAt: new Date(),
     });
+
+    // Notify admins that a new course has been submitted
+    const admins = await User.find({ role: 'admin' }).lean().exec();
+    await Promise.all(
+      admins.map((admin) =>
+        Notification.create({
+          userId: admin._id,
+          type: 'course_submitted',
+          message: `${ownerUser?.name || 'Someone'} submitted "${title.trim()}" for approval.`,
+          read: false,
+          link: '/admin',
+        })
+      )
+    );
 
     res.status(201).json(skill);
   })
@@ -530,8 +582,8 @@ app.delete(
   })
 );
 
-app.patch(
-  '/api/skills/:id/publish',
+app.post(
+  '/api/skills/:id/submit',
   authMiddleware,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const id = paramId(req);
@@ -541,18 +593,229 @@ app.patch(
 
     const skill = await Skill.findById(id).lean().exec();
     if (!skill) throw new NotFoundError('Skill');
-    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can publish');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can submit this course');
 
-    const { published, courseDescription, difficulty, duration, liveClassLink } = req.body;
-    const update: any = {};
-    if (published !== undefined) update.published = published;
-    if (courseDescription !== undefined) update.courseDescription = courseDescription;
-    if (difficulty !== undefined) update.difficulty = difficulty;
-    if (duration !== undefined) update.duration = duration;
-    if (liveClassLink !== undefined) update.liveClassLink = liveClassLink;
+    if (skill.status === 'approved') {
+      throw new AppError('Course is already approved', 400);
+    }
 
-    const updated = await Skill.findByIdAndUpdate(id, update, { new: true }).lean().exec();
+    // Create notification for admins
+    const admins = await User.find({ role: 'admin' }).lean().exec();
+    await Promise.all(
+      admins.map((admin) =>
+        Notification.create({
+          userId: admin._id,
+          type: 'course_submitted',
+          message: `${skill.owner.name} submitted "${skill.title}" for approval.`,
+          read: false,
+          link: '/admin',
+        })
+      )
+    );
+
+    const updated = await Skill.findByIdAndUpdate(
+      id,
+      {
+        status: 'pending',
+        submittedAt: new Date(),
+        published: false,
+      },
+      { new: true }
+    ).lean().exec();
+
+    res.json({ ...updated, message: 'Your course has been submitted successfully and is waiting for Admin approval.' });
+  })
+);
+
+// ===== ADMIN ROUTES =====
+
+app.get(
+  '/api/admin/courses',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status, search, category, limit = 50, skip = 0 } = req.query;
+    const query: any = {};
+
+    if (status) {
+      query.status = status;
+    }
+    if (search) {
+      const q = String(search);
+      if (q.trim().length > 0) {
+        query.$or = [
+          { title: { $regex: q, $options: 'i' } },
+          { description: { $regex: q, $options: 'i' } },
+          { 'owner.name': { $regex: q, $options: 'i' } },
+        ];
+      }
+    }
+    if (category) {
+      query.category = String(category);
+    }
+
+    const result = await Skill.find(query)
+      .populate('approvedBy', 'name')
+      .skip(Number(skip))
+      .limit(Number(limit))
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/admin/courses/:id',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid course ID format', 400);
+    }
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Course');
+    res.json(skill);
+  })
+);
+
+app.post(
+  '/api/admin/courses/:id/approve',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid course ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Course');
+
+    const updated = await Skill.findByIdAndUpdate(
+      id,
+      {
+        status: 'approved',
+        published: true,
+        approvedAt: new Date(),
+        approvedBy: req.userId,
+      },
+      { new: true }
+    ).lean().exec();
+
+    // Notify the teacher
+    await Notification.create({
+      userId: skill.owner._id,
+      type: 'course_approved',
+      message: `Your course "${skill.title}" has been approved and is now live.`,
+      read: false,
+      link: '/dashboard',
+    });
+
     res.json(updated);
+  })
+);
+
+app.post(
+  '/api/admin/courses/:id/reject',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const { rejectionReason, adminComments } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid course ID format', 400);
+    }
+    if (!rejectionReason || String(rejectionReason).trim().length === 0) {
+      throw new AppError('Rejection reason is required', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Course');
+
+    const updated = await Skill.findByIdAndUpdate(
+      id,
+      {
+        status: 'rejected',
+        published: false,
+        rejectionReason,
+        adminComments: adminComments || '',
+      },
+      { new: true }
+    ).lean().exec();
+
+    // Notify the teacher
+    await Notification.create({
+      userId: skill.owner._id,
+      type: 'course_rejected',
+      message: `Your course "${skill.title}" has been rejected: ${rejectionReason}`,
+      read: false,
+      link: '/dashboard',
+    });
+
+    res.json(updated);
+  })
+);
+
+app.post(
+  '/api/admin/courses/:id/request-changes',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const { adminComments } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid course ID format', 400);
+    }
+    if (!adminComments || String(adminComments).trim().length === 0) {
+      throw new AppError('Comments are required', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Course');
+
+    const updated = await Skill.findByIdAndUpdate(
+      id,
+      {
+        status: 'changes_requested',
+        published: false,
+        adminComments,
+      },
+      { new: true }
+    ).lean().exec();
+
+    // Notify the teacher
+    await Notification.create({
+      userId: skill.owner._id,
+      type: 'course_changes_requested',
+      message: `Your course "${skill.title}" needs revisions: ${adminComments}`,
+      read: false,
+      link: '/dashboard',
+    });
+
+    res.json(updated);
+  })
+);
+
+// Admin stats endpoint
+app.get(
+  '/api/admin/stats',
+  adminMiddleware,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [total, pending, approved, rejected, changesRequested] = await Promise.all([
+      Skill.countDocuments({}),
+      Skill.countDocuments({ status: 'pending' }),
+      Skill.countDocuments({ status: 'approved' }),
+      Skill.countDocuments({ status: 'rejected' }),
+      Skill.countDocuments({ status: 'changes_requested' }),
+    ]);
+
+    res.json({
+      totalCourses: total,
+      pendingApprovals: pending,
+      approvedCourses: approved,
+      rejectedCourses: rejected,
+      changeRequests: changesRequested,
+    });
   })
 );
 
@@ -1035,6 +1298,18 @@ app.put(
 // ===== NOTIFICATION ROUTES =====
 
 app.get(
+  '/api/notifications',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const result = await Notification.find({ userId: req.userId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.get(
   '/api/notifications/:userId',
   asyncHandler(async (req: Request, res: Response) => {
     const uid = paramId(req, 'userId');
@@ -1127,7 +1402,7 @@ async function seedDatabase(): Promise<void> {
 
   console.log('Seeding database...');
 
-  const [teacher, student] = await Promise.all([
+  const [teacher, student, adminUser] = await Promise.all([
     User.create({
       name: 'Demo Teacher',
       email: 'teacher@demo.com',
@@ -1140,6 +1415,12 @@ async function seedDatabase(): Promise<void> {
       password: await hashPassword('student123'),
       role: 'student',
     }),
+    User.create({
+      name: 'Admin User',
+      email: 'admin@demo.com',
+      password: await hashPassword('admin123'),
+      role: 'admin',
+    }),
   ]);
 
   await Skill.create({
@@ -1150,6 +1431,7 @@ async function seedDatabase(): Promise<void> {
     level: 'Beginner',
     owner: { _id: teacher._id, name: teacher.name },
     published: true,
+    status: 'approved',
     videoLinks: [],
     recordedVideoLinks: [],
     liveClassLink: '',

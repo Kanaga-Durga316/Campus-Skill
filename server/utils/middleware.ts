@@ -58,6 +58,7 @@ export function asyncHandler(fn: AsyncHandlerFn) {
 
 export interface AuthRequest extends Request {
   userId?: string;
+  userRole?: string;
 }
 
 export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
@@ -73,6 +74,33 @@ export function authMiddleware(req: AuthRequest, res: Response, next: NextFuncti
   }
 
   req.userId = decoded.userId;
+  next();
+}
+
+// ===== Admin Middleware =====
+
+export async function adminMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  const decoded = verifyToken(token);
+  if (!decoded) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  req.userId = decoded.userId;
+
+  const { User } = await import('../models/index.js');
+  const user = await User.findById(decoded.userId).select('role').lean().exec();
+
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  req.userRole = user.role;
   next();
 }
 

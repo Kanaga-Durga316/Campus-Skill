@@ -19,7 +19,10 @@ const mapSkill = (s: any): Skill => ({
   level: (s.level as Skill['level']) || 'All Levels',
   description: s.description || '',
   type: 'teach',
-  createdAt: new Date(s.createdAt || Date.now())
+  createdAt: new Date(s.createdAt || Date.now()),
+  status: s.status,
+  adminComments: s.adminComments,
+  rejectionReason: s.rejectionReason,
 });
 
 /**
@@ -36,6 +39,9 @@ export interface Skill {
   description: string;
   type: 'teach' | 'learn';
   createdAt: Date;
+  status?: 'draft' | 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  adminComments?: string;
+  rejectionReason?: string;
 }
 
 // Pre-defined categories
@@ -127,8 +133,8 @@ const ManageSkills: React.FC = () => {
     let mounted = true;
     setLoading(true);
 
-    // Teach skills (separate "skills" collection)
-    fetchJSON('/skills')
+    // Teach skills (from the user's own courses, including pending/rejected)
+    fetchJSON('/skills/mine')
       .then((skills: any[]) => {
         if (!mounted) return;
         const mapped: Skill[] = skills
@@ -138,7 +144,7 @@ const ManageSkills: React.FC = () => {
       })
       .catch((err: any) => {
         if (mounted) setError(err?.message || 'Failed to load skills');
-      });
+      })
 
     // Learn skills (separate "learnSkills" collection)
     fetchJSON('/learn-skills')
@@ -282,7 +288,11 @@ const ManageSkills: React.FC = () => {
       }
 
       resetResourceFields();
-      alert(`${activeTab === 'teach' ? 'Teaching' : 'Learning'} skill added successfully! 🎉`);
+      if (activeTab === 'teach') {
+        alert('Your course has been submitted successfully and is waiting for Admin approval. 🎉');
+      } else {
+        alert('Learning skill added successfully! 🎉');
+      }
     } catch (err: any) {
       setError(err?.message || 'Failed to add skill');
     }
@@ -577,14 +587,25 @@ const ManageSkills: React.FC = () => {
                 
                 {teachingSkills.length > 0 ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {teachingSkills.map(skill => (
-                      <SkillCard 
-                        key={skill.id} 
-                        skill={skill} 
-                        onDelete={() => handleDelete(skill.id, 'teach')}
-                        onOpen={() => navigate('/course/' + skill.id)}
-                      />
-                    ))}
+                     {teachingSkills.map(skill => (
+                       <SkillCard 
+                         key={skill.id} 
+                         skill={skill} 
+                         onDelete={() => handleDelete(skill.id, 'teach')}
+                         onOpen={() => navigate('/course/' + skill.id)}
+                         onSubmit={async () => {
+                           try {
+                             await fetchJSON(`/skills/${skill.id}/submit`, { method: 'POST' });
+                             alert('Your course has been submitted successfully and is waiting for Admin approval.');
+                             // Refresh the list
+                             const updated = await fetchJSON('/skills/mine');
+                             setTeachingSkills(updated.filter((s: any) => !userId || s.owner?._id === userId || s.owner === userId).map(mapSkill));
+                           } catch (err: any) {
+                             alert(err.message || 'Failed to submit');
+                           }
+                         }}
+                       />
+                     ))}
                   </div>
                 ) : (
                   <EmptyState 
@@ -632,11 +653,20 @@ const ManageSkills: React.FC = () => {
  * SkillCard Component
  * Displays a single skill as a card
  */
+const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
+  draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700', icon: '🕑' },
+  pending: { label: 'Pending Review', color: 'bg-yellow-100 text-yellow-700', icon: '🟡' },
+  approved: { label: 'Live', color: 'bg-green-100 text-green-700', icon: '🟢' },
+  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700', icon: '🔴' },
+  changes_requested: { label: 'Changes Requested', color: 'bg-orange-100 text-orange-700', icon: '🟠' },
+};
+
 const SkillCard: React.FC<{
   skill: Skill;
   onDelete: () => void;
   onOpen?: () => void;
-}> = ({ skill, onDelete, onOpen }) => {
+  onSubmit?: () => void;
+}> = ({ skill, onDelete, onOpen, onSubmit }) => {
   const isTeaching = skill.type === 'teach';
   
   return (
@@ -656,15 +686,27 @@ const SkillCard: React.FC<{
         }`}>
           {skill.category}
         </div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-          title="Delete skill"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-2">
+          {skill.status && skill.status !== 'approved' && skill.status !== 'draft' && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[skill.status]?.color || 'bg-slate-100 text-slate-700'}`}>
+              {statusConfig[skill.status]?.icon} {statusConfig[skill.status]?.label}
+            </span>
+          )}
+          {skill.status === 'approved' && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+              {statusConfig.approved.icon} {statusConfig.approved.label}
+            </span>
+          )}
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="text-gray-400 hover:text-red-500 transition-colors"
+            title="Delete skill"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Title */}
@@ -685,6 +727,35 @@ const SkillCard: React.FC<{
       {/* Description */}
       {skill.description && (
         <p className="text-gray-600 text-sm line-clamp-2">{skill.description}</p>
+      )}
+
+      {/* Admin Comments / Rejection Reason */}
+      {skill.adminComments && skill.status && skill.status !== 'approved' && skill.status !== 'pending' && (
+        <div className="mt-2 p-2 bg-orange-50 border border-orange-200 text-orange-800 rounded-lg">
+          <p className="text-xs font-semibold">Admin Feedback:</p>
+          <p className="text-xs mt-1">{skill.adminComments}</p>
+        </div>
+      )}
+      {skill.rejectionReason && skill.status === 'rejected' && (
+        <div className="mt-2 p-2 bg-red-50 border border-red-200 text-red-800 rounded-lg">
+          <p className="text-xs font-semibold">Rejection Reason:</p>
+          <p className="text-xs mt-1">{skill.rejectionReason}</p>
+        </div>
+      )}
+
+      {/* Submit / Resubmit Button */}
+      {isTeaching && skill.status && (skill.status === 'draft' || skill.status === 'changes_requested') && onSubmit && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onSubmit(); }}
+          className="mt-2 w-full py-2 bg-amber-600 text-white text-sm font-medium rounded-xl hover:bg-amber-700"
+        >
+          {skill.status === 'changes_requested' ? '🔄 Resubmit for Approval' : '📤 Submit for Approval'}
+        </button>
+      )}
+      {isTeaching && skill.status === 'pending' && (
+        <div className="mt-2 w-full py-2 text-center text-xs text-yellow-700 bg-yellow-50 rounded-xl">
+          ⏳ Waiting for admin review
+        </div>
       )}
 
       {/* Footer */}

@@ -62,6 +62,12 @@ export interface ISkill extends Document<string> {
   difficulty?: string;
   duration?: string;
   published: boolean;
+  status: 'draft' | 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  submittedAt?: Date;
+  approvedAt?: Date;
+  approvedBy?: string;
+  rejectionReason?: string;
+  adminComments?: string;
   modules: IModule[];
   thumbnail?: string;
   createdAt?: Date;
@@ -90,6 +96,16 @@ const SkillSchema = new Schema<ISkill>({
   difficulty: { type: String, default: '' },
   duration: { type: String, default: '' },
   published: { type: Boolean, default: false },
+  status: {
+    type: String,
+    enum: ['draft', 'pending', 'approved', 'rejected', 'changes_requested'],
+    default: 'draft',
+  },
+  submittedAt: { type: Date, default: null },
+  approvedAt: { type: Date, default: null },
+  approvedBy: { type: String, default: '' },
+  rejectionReason: { type: String, default: '' },
+  adminComments: { type: String, default: '' },
   modules: { type: [ModuleSchema], default: [] },
   thumbnail: { type: String, default: '' },
 }, { timestamps: true });

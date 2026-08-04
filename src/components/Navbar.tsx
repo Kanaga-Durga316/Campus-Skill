@@ -18,11 +18,19 @@ const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  // theme switch removed
 
-  // Determine which page we're on for conditional rendering
+  const storedUser = (() => {
+    try {
+      const u = localStorage.getItem('user');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  })() as { role?: string } | null;
+
+  const isAdmin = storedUser?.role === 'admin';
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
-  const isDashboardPage = location.pathname === '/dashboard';
+  const isDashboardPage = location.pathname === '/dashboard' || location.pathname === '/admin';
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-b border-gray-100 dark:border-gray-700 shadow-sm">
@@ -65,9 +73,14 @@ const Navbar: React.FC = () => {
 
             {isDashboardPage && (
               <>
-                <NavLink to="/dashboard" active={true}>
+                <NavLink to="/dashboard" active={location.pathname === '/dashboard'}>
                   Dashboard
                 </NavLink>
+                {isAdmin && (
+                  <NavLink to="/admin" active={location.pathname === '/admin'}>
+                    Admin Panel
+                  </NavLink>
+                )}
                 <button 
                   onClick={() => navigate('/')}
                   className="ml-2 px-5 py-2.5 text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 transition-colors rounded-full hover:bg-red-50 dark:hover:bg-red-900/20"
@@ -123,9 +136,14 @@ const Navbar: React.FC = () => {
 
               {isDashboardPage && (
                 <>
-                  <MobileNavLink to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} active={true}>
+                  <MobileNavLink to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/dashboard'}>
                     📊 Dashboard
                   </MobileNavLink>
+                  {isAdmin && (
+                    <MobileNavLink to="/admin" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/admin'}>
+                      🛠️ Admin Panel
+                    </MobileNavLink>
+                  )}
                   <button 
                     onClick={() => {
                       setIsMobileMenuOpen(false);

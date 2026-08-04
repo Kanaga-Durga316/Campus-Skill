@@ -17,6 +17,9 @@ interface Skill {
   emoji: string;
   learners?: number;
   rating?: number;
+  status?: 'draft' | 'pending' | 'approved' | 'rejected' | 'changes_requested';
+  adminComments?: string;
+  rejectionReason?: string;
 }
 
 interface Student {
@@ -217,8 +220,8 @@ const Dashboard: React.FC = () => {
       }
 
       try {
-        const [skills, users, requests, enrollments, teacherRequests, currentProfile, learnSkillsRaw] = await Promise.all([
-          fetchJSON('/skills'),
+        const [mySkillsData, users, requests, enrollments, teacherRequests, currentProfile, learnSkillsRaw] = await Promise.all([
+          fetchJSON('/skills/mine').catch(() => []),
           fetchJSON('/users'),
           fetchJSON('/requests'),
           fetchJSON('/requests/enrollments').catch(() => []),
@@ -231,7 +234,7 @@ const Dashboard: React.FC = () => {
 
         const userId = storedUser._id;
 
-        const mySkillsList: Skill[] = (skills as any[])
+        const mySkillsList: Skill[] = (mySkillsData as any[])
           .filter((s: any) => s.owner?._id === userId || s.owner === userId)
           .map((s: any) => ({
             id: s._id,
@@ -240,7 +243,10 @@ const Dashboard: React.FC = () => {
             level: s.level || 'All Levels',
             emoji: getEmoji(s.category || 'Other'),
             learners: 0,
-            rating: s.rating || 0
+            rating: s.rating || 0,
+            status: s.status,
+            adminComments: s.adminComments,
+            rejectionReason: s.rejectionReason,
           }));
 
         const otherUsers: Student[] = (users as any[])
@@ -505,6 +511,14 @@ const ActionButton: React.FC<{ icon: string; label: string; primary?: boolean; o
  * YourSkillsSection Component
  * Displays skills the user can teach
  */
+const statusConfig = {
+  draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300', icon: '🕑' },
+  pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', icon: '🟡' },
+  approved: { label: 'Live', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', icon: '🟢' },
+  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', icon: '🔴' },
+  changes_requested: { label: 'Needs Changes', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', icon: '🟠' },
+};
+
 const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onViewDetails?: (skillId: string) => void }> = ({ skills, onManage, onViewDetails }) => (
   <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
     <div className="flex items-center justify-between mb-4">
@@ -523,12 +537,26 @@ const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onVie
           >
           <div className="flex items-center justify-between mb-2">
             <span className="text-2xl">{skill.emoji}</span>
-            <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-full">
-              {skill.level}
-            </span>
+            <div className="flex items-center gap-2">
+              {skill.status && skill.status !== 'approved' && (
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[skill.status]?.color}`}>
+                  {statusConfig[skill.status]?.icon} {statusConfig[skill.status]?.label}
+                </span>
+              )}
+              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-full">
+                {skill.level}
+              </span>
+            </div>
           </div>
           <h3 className="font-semibold text-slate-900 dark:text-white mb-1">{skill.title}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">{skill.category}</p>
+          {(skill.adminComments || skill.rejectionReason) && skill.status !== 'approved' && (
+            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
+                {skill.rejectionReason ? `Rejection: ${skill.rejectionReason}` : `Admin note: ${skill.adminComments}`}
+              </p>
+            </div>
+          )}
           <div className="flex items-center mt-2 text-xs text-slate-500 dark:text-slate-400">
             <span className="text-amber-500 mr-1">★</span>
             <span>{skill.rating}</span>
