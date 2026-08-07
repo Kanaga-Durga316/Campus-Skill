@@ -19,10 +19,10 @@ import {
   requireFields,
   isValidEmail,
 } from './utils/middleware.js';
-import { uploadNotes } from './utils/upload.js';
+import { uploadNotes, uploadSharedFile } from './utils/upload.js';
 import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
 import { connectDatabase } from '../config/db.js';
-import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review } from './models/index.js';
+import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review, ChatRoom, Announcement, Meeting, Poll, DiscussionPost, DiscussionReply, SharedFile, StudyGroup, Attendance } from './models/index.js';
 
 dotenv.config();
 
@@ -1712,6 +1712,688 @@ app.post(
     });
 
     res.status(201).json(notification);
+  })
+);
+
+// ===== CHAT ROOM ROUTES =====
+
+app.get(
+  '/api/chatrooms',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const rooms = await ChatRoom.find({
+      $or: [
+        { 'participants._id': req.userId },
+        { type: 'group', skillId: { $ne: '' } },
+      ],
+    })
+      .sort({ lastMessageAt: -1 })
+      .lean()
+      .exec();
+    res.json(rooms);
+  })
+);
+
+app.get(
+  '/api/chatrooms/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const room = await ChatRoom.findById(id).lean().exec();
+    if (!room) throw new NotFoundError('Chat room');
+    const isParticipant = room.participants.some((p: any) => p._id === req.userId);
+    if (!isParticipant && room.type === 'private') {
+      throw new ForbiddenError('You are not part of this chat');
+    }
+    res.json(room);
+  })
+);
+
+app.post(
+  '/api/chatrooms',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { name, type, skillId, participantIds } = req.body;
+    if (!name) throw new AppError('Room name is required', 400);
+
+    const participants = await User.find({ _id: { $in: participantIds || [req.userId] } })
+      .select('_id name')
+      .lean()
+      .exec();
+
+    const room = await ChatRoom.create({
+      name,
+      type: type || 'private',
+      skillId: skillId || '',
+      participants: participants.map((u: any) => ({ _id: u._id, name: u.name })),
+      createdBy: req.userId,
+    });
+
+    res.status(201).json(room);
+  })
+);
+
+app.put(
+  '/api/chatrooms/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const room = await ChatRoom.findById(id).lean().exec();
+    if (!room) throw new NotFoundError('Chat room');
+    if (room.createdBy !== req.userId) throw new ForbiddenError('Only the creator can update this room');
+
+    const { name, lastMessage } = req.body;
+    const update: any = {};
+    if (name !== undefined) update.name = name;
+    if (lastMessage !== undefined) {
+      update.lastMessage = lastMessage;
+      update.lastMessageAt = new Date();
+    }
+
+    const updated = await ChatRoom.findByIdAndUpdate(id, update, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/chatrooms/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const room = await ChatRoom.findById(id).lean().exec();
+    if (!room) throw new NotFoundError('Chat room');
+    if (room.createdBy !== req.userId) throw new ForbiddenError('Only the creator can delete this room');
+
+    await ChatRoom.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== ANNOUNCEMENT ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/announcements',
+  asyncHandler(async (req: Request, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const result = await Announcement.find({ skillId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/announcements',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const { title, message, type } = req.body;
+    if (!title || !message) throw new AppError('Title and message are required', 400);
+
+    const announcement = await Announcement.create({
+      skillId,
+      title,
+      message,
+      type: type || 'general',
+      createdBy: req.userId,
+    });
+
+    res.status(201).json(announcement);
+  })
+);
+
+app.put(
+  '/api/announcements/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const announcement = await Announcement.findById(id).lean().exec();
+    if (!announcement) throw new NotFoundError('Announcement');
+    if (announcement.createdBy !== req.userId) throw new ForbiddenError('Only the creator can update this announcement');
+
+    const { title, message, type } = req.body;
+    const update: any = {};
+    if (title !== undefined) update.title = title;
+    if (message !== undefined) update.message = message;
+    if (type !== undefined) update.type = type;
+
+    const updated = await Announcement.findByIdAndUpdate(id, update, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/announcements/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const announcement = await Announcement.findById(id).lean().exec();
+    if (!announcement) throw new NotFoundError('Announcement');
+    if (announcement.createdBy !== req.userId) throw new ForbiddenError('Only the creator can delete this announcement');
+
+    await Announcement.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== MEETING ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/meetings',
+  asyncHandler(async (req: Request, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const result = await Meeting.find({ skillId })
+      .sort({ date: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/meetings',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const { title, date, time, duration, link, platform, password, reminder } = req.body;
+    if (!title || !date || !time || !link) throw new AppError('Title, date, time, and link are required', 400);
+
+    const meeting = await Meeting.create({
+      skillId,
+      title,
+      date,
+      time,
+      duration: duration || '1 hour',
+      link,
+      platform: platform || 'google_meet',
+      password: password || '',
+      reminder: reminder !== false,
+      createdBy: req.userId,
+    });
+
+    res.status(201).json(meeting);
+  })
+);
+
+app.put(
+  '/api/meetings/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const meeting = await Meeting.findById(id).lean().exec();
+    if (!meeting) throw new NotFoundError('Meeting');
+    if (meeting.createdBy !== req.userId) throw new ForbiddenError('Only the creator can update this meeting');
+
+    const { title, date, time, duration, link, platform, password, reminder } = req.body;
+    const update: any = {};
+    if (title !== undefined) update.title = title;
+    if (date !== undefined) update.date = date;
+    if (time !== undefined) update.time = time;
+    if (duration !== undefined) update.duration = duration;
+    if (link !== undefined) update.link = link;
+    if (platform !== undefined) update.platform = platform;
+    if (password !== undefined) update.password = password;
+    if (reminder !== undefined) update.reminder = reminder;
+
+    const updated = await Meeting.findByIdAndUpdate(id, update, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/meetings/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const meeting = await Meeting.findById(id).lean().exec();
+    if (!meeting) throw new NotFoundError('Meeting');
+    if (meeting.createdBy !== req.userId) throw new ForbiddenError('Only the creator can delete this meeting');
+
+    await Meeting.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== POLL ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/polls',
+  asyncHandler(async (req: Request, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const result = await Poll.find({ skillId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/polls',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const { question, options } = req.body;
+    if (!question || !options || !Array.isArray(options) || options.length < 2) {
+      throw new AppError('Question and at least 2 options are required', 400);
+    }
+
+    const poll = await Poll.create({
+      skillId,
+      question,
+      options: options.map((text: string) => ({ text, votes: 0 })),
+      createdBy: req.userId,
+      active: true,
+    });
+
+    res.status(201).json(poll);
+  })
+);
+
+app.put(
+  '/api/polls/:id/vote',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const poll = await Poll.findById(id).lean().exec();
+    if (!poll) throw new NotFoundError('Poll');
+    if (!poll.active) throw new AppError('Poll is closed', 400);
+
+    const { optionIndex } = req.body;
+    if (typeof optionIndex !== 'number' || optionIndex < 0 || optionIndex >= poll.options.length) {
+      throw new AppError('Invalid option', 400);
+    }
+
+    const updated = await Poll.findByIdAndUpdate(
+      id,
+      { $inc: { [`options.${optionIndex}.votes`]: 1 } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(updated);
+  })
+);
+
+app.put(
+  '/api/polls/:id/close',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const poll = await Poll.findById(id).lean().exec();
+    if (!poll) throw new NotFoundError('Poll');
+    if (poll.createdBy !== req.userId) throw new ForbiddenError('Only the creator can close this poll');
+
+    const updated = await Poll.findByIdAndUpdate(id, { active: false }, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/polls/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const poll = await Poll.findById(id).lean().exec();
+    if (!poll) throw new NotFoundError('Poll');
+    if (poll.createdBy !== req.userId) throw new ForbiddenError('Only the creator can delete this poll');
+
+    await Poll.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== DISCUSSION ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/discussions',
+  asyncHandler(async (req: Request, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const posts = await DiscussionPost.find({ skillId })
+      .sort({ pinned: -1, createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(posts);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/discussions',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const { title, content } = req.body;
+    if (!title || !content) throw new AppError('Title and content are required', 400);
+
+    const user = await User.findById(req.userId).lean().exec();
+    const post = await DiscussionPost.create({
+      skillId,
+      authorId: req.userId,
+      authorName: user?.name || 'Unknown',
+      title,
+      content,
+      pinned: false,
+      reported: false,
+    });
+
+    res.status(201).json(post);
+  })
+);
+
+app.put(
+  '/api/discussions/:id/pin',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const post = await DiscussionPost.findById(id).lean().exec();
+    if (!post) throw new NotFoundError('Discussion post');
+    if (post.createdBy !== req.userId) throw new ForbiddenError('Only the creator can pin this post');
+
+    const updated = await DiscussionPost.findByIdAndUpdate(id, { pinned: true }, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.put(
+  '/api/discussions/:id/best-answer',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const post = await DiscussionPost.findById(id).lean().exec();
+    if (!post) throw new NotFoundError('Discussion post');
+    if (post.authorId !== req.userId) throw new ForbiddenError('Only the author can mark best answer');
+
+    const { replyId } = req.body;
+    const updated = await DiscussionPost.findByIdAndUpdate(id, { bestAnswerId: replyId || '' }, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/discussions/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const post = await DiscussionPost.findById(id).lean().exec();
+    if (!post) throw new NotFoundError('Discussion post');
+    if (post.authorId !== req.userId && req.userRole !== 'admin') {
+      throw new ForbiddenError('Only the author or admin can delete this post');
+    }
+
+    await DiscussionPost.findByIdAndDelete(id).exec();
+    await DiscussionReply.deleteMany({ postId: id }).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== DISCUSSION REPLIES =====
+
+app.get(
+  '/api/discussions/:postId/replies',
+  asyncHandler(async (req: Request, res: Response) => {
+    const postId = paramId(req, 'postId');
+    const replies = await DiscussionReply.find({ postId })
+      .sort({ createdAt: 1 })
+      .lean()
+      .exec();
+    res.json(replies);
+  })
+);
+
+app.post(
+  '/api/discussions/:postId/replies',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const postId = paramId(req, 'postId');
+    const { content } = req.body;
+    if (!content) throw new AppError('Content is required', 400);
+
+    const post = await DiscussionPost.findById(postId).lean().exec();
+    if (!post) throw new NotFoundError('Discussion post');
+
+    const user = await User.findById(req.userId).lean().exec();
+    const reply = await DiscussionReply.create({
+      postId,
+      skillId: post.skillId,
+      authorId: req.userId,
+      authorName: user?.name || 'Unknown',
+      content,
+      likes: [],
+      highlighted: false,
+    });
+
+    res.status(201).json(reply);
+  })
+);
+
+app.put(
+  '/api/replies/:id/like',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const reply = await DiscussionReply.findById(id).lean().exec();
+    if (!reply) throw new NotFoundError('Reply');
+
+    const updated = await DiscussionReply.findByIdAndUpdate(
+      id,
+      reply.likes.includes(req.userId)
+        ? { $pull: { likes: req.userId } }
+        : { $addToSet: { likes: req.userId } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(updated);
+  })
+);
+
+app.put(
+  '/api/replies/:id/highlight',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const reply = await DiscussionReply.findById(id).lean().exec();
+    if (!reply) throw new NotFoundError('Reply');
+
+    const post = await DiscussionPost.findById(reply.postId).lean().exec();
+    if (!post || post.authorId !== req.userId) throw new ForbiddenError('Only the post author can highlight replies');
+
+    const updated = await DiscussionReply.findByIdAndUpdate(id, { highlighted: !reply.highlighted }, { new: true }).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/replies/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const reply = await DiscussionReply.findById(id).lean().exec();
+    if (!reply) throw new NotFoundError('Reply');
+    if (reply.authorId !== req.userId && req.userRole !== 'admin') {
+      throw new ForbiddenError('Only the author or admin can delete this reply');
+    }
+
+    await DiscussionReply.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== SHARED FILE ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/files',
+  asyncHandler(async (req: Request, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const result = await SharedFile.find({ skillId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/files',
+  authMiddleware,
+  uploadSharedFile,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) throw new AppError('File is required', 400);
+
+    const sharedFile = await SharedFile.create({
+      skillId,
+      uploadedBy: req.userId,
+      fileName: file.originalname,
+      filePath: `/uploads/${file.filename}`,
+      fileSize: file.size,
+      mimeType: file.mimetype,
+    });
+
+    res.status(201).json(sharedFile);
+  })
+);
+
+app.delete(
+  '/api/files/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const file = await SharedFile.findById(id).lean().exec();
+    if (!file) throw new NotFoundError('File');
+    if (file.uploadedBy !== req.userId) throw new ForbiddenError('Only the uploader can delete this file');
+
+    await SharedFile.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== STUDY GROUP ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/study-groups',
+  asyncHandler(async (req: Request, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const result = await StudyGroup.find({ skillId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/study-groups',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const { name, description, memberIds } = req.body;
+    if (!name) throw new AppError('Group name is required', 400);
+
+    const members = await User.find({ _id: { $in: memberIds || [req.userId] } })
+      .select('_id name')
+      .lean()
+      .exec();
+
+    const group = await StudyGroup.create({
+      name,
+      description: description || '',
+      skillId,
+      members: members.map((u: any) => ({ _id: u._id, name: u.name })),
+      createdBy: req.userId,
+    });
+
+    res.status(201).json(group);
+  })
+);
+
+app.put(
+  '/api/study-groups/:id/members',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const group = await StudyGroup.findById(id).lean().exec();
+    if (!group) throw new NotFoundError('Study group');
+
+    const { memberId } = req.body;
+    if (!memberId) throw new AppError('Member ID is required', 400);
+
+    const user = await User.findById(memberId).select('_id name').lean().exec();
+    if (!user) throw new NotFoundError('User');
+
+    const updated = await StudyGroup.findByIdAndUpdate(
+      id,
+      { $addToSet: { members: { _id: user._id, name: user.name } } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/study-groups/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const group = await StudyGroup.findById(id).lean().exec();
+    if (!group) throw new NotFoundError('Study group');
+    if (group.createdBy !== req.userId) throw new ForbiddenError('Only the creator can delete this group');
+
+    await StudyGroup.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== ATTENDANCE ROUTES =====
+
+app.get(
+  '/api/skills/:skillId/attendance',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const result = await Attendance.find({ skillId })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    res.json(result);
+  })
+);
+
+app.post(
+  '/api/skills/:skillId/attendance',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const skillId = paramId(req, 'skillId');
+    const { meetingId, userId, status } = req.body;
+    if (!meetingId || !userId) throw new AppError('Meeting ID and user ID are required', 400);
+
+    const user = await User.findById(userId).select('_id name').lean().exec();
+    if (!user) throw new NotFoundError('User');
+
+    const attendance = await Attendance.create({
+      skillId,
+      meetingId,
+      userId,
+      userName: user.name,
+      status: status || 'present',
+    });
+
+    res.status(201).json(attendance);
+  })
+);
+
+app.put(
+  '/api/attendance/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const attendance = await Attendance.findById(id).lean().exec();
+    if (!attendance) throw new NotFoundError('Attendance record');
+
+    const { status } = req.body;
+    const updated = await Attendance.findByIdAndUpdate(id, { status }, { new: true }).lean().exec();
+    res.json(updated);
   })
 );
 

@@ -22,6 +22,13 @@ import StudentProfile from './components/StudentProfile';
 import StudentsList from './components/StudentsList';
 import AdminDashboard from './components/AdminDashboard';
 import Profile from './components/Profile';
+import Chat from './components/Chat';
+import Announcements from './components/Announcements';
+import Meetings from './components/Meetings';
+import Polls from './components/Polls';
+import Discussions from './components/Discussions';
+import StudyGroups from './components/StudyGroups';
+import Files from './components/Files';
 
 /**
  * HomePage Component
@@ -85,6 +92,20 @@ const App: React.FC = () => {
             <Route path="/students" element={<StudentsList />} />
             {/* Admin Dashboard route */}
             <Route path="/admin" element={<AdminDashboard />} />
+            {/* Chat route */}
+            <Route path="/chat" element={<Chat />} />
+            {/* Announcements route */}
+            <Route path="/announcements" element={<Announcements />} />
+            {/* Meetings route */}
+            <Route path="/meetings" element={<Meetings />} />
+            {/* Polls route */}
+            <Route path="/polls" element={<Polls />} />
+            {/* Discussions route */}
+            <Route path="/discussions" element={<Discussions />} />
+            {/* Study Groups route */}
+            <Route path="/study-groups" element={<StudyGroups />} />
+            {/* Files route */}
+            <Route path="/files" element={<Files />} />
           </Routes>
         </div>
       </Router>

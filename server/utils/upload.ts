@@ -11,19 +11,35 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (_req: any, file: any, cb: any) => {
-  if (file.mimetype === 'application/pdf') {
+  const allowedMimes = [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'application/zip',
+    'application/x-zip-compressed',
+    'text/plain',
+    'application/javascript',
+    'application/json',
+    'text/css',
+    'text/html',
+  ];
+  if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Only PDF files are allowed for notes'), false);
+    cb(new Error('Unsupported file type'), false);
   }
 };
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 15 * 1024 * 1024 } // 15 MB max
+  limits: { fileSize: 25 * 1024 * 1024 } // 25 MB max
 });
 
 export const uploadNotes = upload.single('notesFile');
+export const uploadSharedFile = upload.single('file');
 
 export default upload;
