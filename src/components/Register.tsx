@@ -23,6 +23,7 @@ const RegisterPage: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
+    username: '',
     password: '',
     confirmPassword: '',
     role: 'student',
@@ -58,6 +59,7 @@ const RegisterPage: React.FC = () => {
         body: JSON.stringify({
           name: formData.name,
           email: formData.email,
+          username: formData.username,
           password: formData.password,
           role: formData.role
         })
@@ -162,6 +164,30 @@ const RegisterPage: React.FC = () => {
                         onChange={handleChange}
                         placeholder="you@university.edu"
                         required
+                        disabled={loading}
+                        className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Username */}
+                  <div className="space-y-2">
+                    <label htmlFor="username" className="block text-sm font-semibold text-gray-700">
+                      Username
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                      <input
+                        type="text"
+                        id="username"
+                        name="username"
+                        value={formData.username}
+                        onChange={handleChange}
+                        placeholder="johndoe"
                         disabled={loading}
                         className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border-2 border-gray-100 rounded-xl focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10 transition-all duration-300 outline-none disabled:opacity-50"
                       />

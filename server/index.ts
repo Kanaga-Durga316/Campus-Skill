@@ -113,7 +113,7 @@ app.get(
 app.post(
   '/api/auth/register',
   asyncHandler(async (req: Request, res: Response) => {
-    const { name, email, password, role } = req.body;
+    const { name, email, username, password, role } = req.body;
 
     const missing = requireFields(req.body, ['name', 'email', 'password']);
     if (missing) throw new AppError(missing, 400);
@@ -123,13 +123,14 @@ app.post(
     if (password.length < 6) throw new AppError('Password must be at least 6 characters', 400);
     if (role && !['student', 'teacher'].includes(role)) throw new AppError('Role must be student or teacher', 400);
 
-    const existing = await User.findOne({ email }).lean().exec();
-    if (existing) throw new AppError('Email already registered', 409);
+    const existing = await User.findOne({ $or: [{ email: email.toLowerCase().trim() }, { username: username?.trim() }] }).lean().exec();
+    if (existing) throw new AppError('Email or username already registered', 409);
 
     const hashedPassword = await hashPassword(password);
     const user = await User.create({
       name: name.trim(),
       email: email.toLowerCase().trim(),
+      username: username ? username.trim() : undefined,
       password: hashedPassword,
       role: role || 'student',
     });
@@ -144,21 +145,25 @@ app.post(
 app.post(
   '/api/auth/login',
   asyncHandler(async (req: Request, res: Response) => {
-    const { email, password } = req.body;
+    const { emailOrUsername, password } = req.body;
 
-    const missing = requireFields(req.body, ['email', 'password']);
+    const missing = requireFields(req.body, ['emailOrUsername', 'password']);
     if (missing) throw new AppError(missing, 400);
 
-    if (!isValidEmail(email)) throw new AppError('Invalid email format', 400);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailOrUsername);
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() })
+    const query = isEmail
+      ? { email: emailOrUsername.toLowerCase().trim() }
+      : { username: emailOrUsername.trim() };
+
+    const user = await User.findOne(query)
       .select('+password')
       .lean()
       .exec();
-    if (!user) throw new UnauthorizedError('Invalid email or password');
+    if (!user) throw new UnauthorizedError('Invalid credentials');
 
     const isMatch = await comparePassword(password, user.password!);
-    if (!isMatch) throw new UnauthorizedError('Invalid email or password');
+    if (!isMatch) throw new UnauthorizedError('Invalid credentials');
 
     const token = generateToken(user._id);
     const safeUser = sanitizeUser(user);

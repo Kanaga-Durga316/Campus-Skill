@@ -9,6 +9,7 @@ export interface IUser extends Document<string> {
   bio?: string;
   avatarUrl?: string;
   coverImage?: string;
+  username?: string;
   department?: string;
   year?: string;
   location?: string;
@@ -89,6 +90,7 @@ const UserSchema = new Schema<IUser>({
   bio: { type: String, default: '' },
   avatarUrl: { type: String, default: '' },
   coverImage: { type: String, default: '' },
+  username: { type: String, default: '', trim: true, sparse: true },
   department: { type: String, default: '' },
   year: { type: String, default: '' },
   location: { type: String, default: '' },
