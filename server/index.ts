@@ -206,21 +206,148 @@ app.put(
     const user = await User.findById(id).lean().exec();
     if (!user) throw new NotFoundError('User');
 
-    const { name, bio, avatarUrl, location, preferredMode, experienceLevel, sessionDurationHours, portfolioLinks, verificationStatus } = req.body;
+    const allowed = [
+      'name', 'bio', 'avatarUrl', 'coverImage', 'location', 'preferredMode', 'experienceLevel',
+      'sessionDurationHours', 'portfolioLinks', 'verificationStatus', 'studentId', 'college',
+      'university', 'semester', 'cgpa', 'graduationYear', 'careerGoal', 'academicInterests',
+      'skillsTeaching', 'skillsLearning', 'certificates', 'achievements', 'socialLinks',
+      'profileVisibility', 'privacySettings', 'phoneNumber', 'twoFactorEnabled'
+    ];
 
     const update: any = {};
-    if (name !== undefined) update.name = name;
-    if (bio !== undefined) update.bio = bio;
-    if (avatarUrl !== undefined) update.avatarUrl = avatarUrl;
-    if (location !== undefined) update.location = location;
-    if (preferredMode !== undefined) update.preferredMode = preferredMode;
-    if (experienceLevel !== undefined) update.experienceLevel = experienceLevel;
-    if (sessionDurationHours !== undefined) update.sessionDurationHours = sessionDurationHours;
-    if (portfolioLinks !== undefined) update.portfolioLinks = portfolioLinks;
-    if (verificationStatus !== undefined) update.verificationStatus = verificationStatus;
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        update[key] = req.body[key];
+      }
+    }
 
     const updated = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true }).lean().exec();
     res.json(sanitizeUser(updated));
+  })
+);
+
+// ===== PROFILE API =====
+
+app.get(
+  '/api/profile/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+    const user = await User.findById(id).lean().exec();
+    if (!user) throw new NotFoundError('User');
+
+    const visibility = user.profileVisibility || 'public';
+    const isSelf = req.userId === id;
+
+    if (visibility === 'private' && !isSelf) {
+      throw new ForbiddenError('This profile is private');
+    }
+
+    const safe: any = { ...sanitizeUser(user) };
+
+    if (!isSelf) {
+      if (visibility === 'connections') {
+        const me = await User.findById(req.userId).lean().exec();
+        const isFollower = me?.followers?.includes(id);
+        if (!isFollower) {
+          throw new ForbiddenError('This profile is visible to connections only');
+        }
+      }
+      if (!safe.privacySettings?.showEmail) delete safe.email;
+      if (!safe.privacySettings?.showPhone) delete safe.phoneNumber;
+      if (!safe.privacySettings?.showPortfolio) delete safe.portfolioLinks;
+      if (!safe.privacySettings?.showCertificates) delete safe.certificates;
+      if (!safe.privacySettings?.showAchievements) delete safe.achievements;
+    }
+
+    res.json(safe);
+  })
+);
+
+app.put(
+  '/api/profile/:id',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only update your own profile');
+    }
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+
+    const allowed = [
+      'bio', 'avatarUrl', 'coverImage', 'location', 'preferredMode', 'experienceLevel',
+      'studentId', 'college', 'university', 'semester', 'cgpa', 'graduationYear', 'careerGoal',
+      'academicInterests', 'skillsTeaching', 'skillsLearning', 'certificates', 'achievements',
+      'socialLinks', 'profileVisibility', 'privacySettings', 'phoneNumber', 'twoFactorEnabled',
+      'portfolioLinks'
+    ];
+
+    const update: any = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        update[key] = req.body[key];
+      }
+    }
+
+    const updated = await User.findByIdAndUpdate(id, update, { new: true, runValidators: true }).lean().exec();
+    res.json(sanitizeUser(updated));
+  })
+);
+
+// ===== FOLLOW ROUTES =====
+
+app.post(
+  '/api/profile/:id/follow',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const targetId = paramId(req, 'id');
+    if (req.userId === targetId) {
+      throw new AppError('You cannot follow yourself', 400);
+    }
+
+    const target = await User.findById(targetId).lean().exec();
+    if (!target) throw new NotFoundError('User');
+
+    const me = await User.findById(req.userId).lean().exec();
+    if (!me) throw new NotFoundError('User');
+
+    const isFollowing = me.following?.includes(targetId);
+    if (isFollowing) {
+      await User.findByIdAndUpdate(req.userId, { $pull: { following: targetId } }).exec();
+      await User.findByIdAndUpdate(targetId, { $pull: { followers: req.userId } }).exec();
+      res.json({ following: false });
+    } else {
+      await User.findByIdAndUpdate(req.userId, { $addToSet: { following: targetId } }).exec();
+      await User.findByIdAndUpdate(targetId, { $addToSet: { followers: req.userId } }).exec();
+      res.json({ following: true });
+    }
+  })
+);
+
+app.get(
+  '/api/profile/:id/followers',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req, 'id');
+    const user = await User.findById(id).select('followers').lean().exec();
+    if (!user) throw new NotFoundError('User');
+    const followers = await User.find({ _id: { $in: user.followers || [] } }).select('name email avatarUrl').lean().exec();
+    res.json(followers.map(sanitizeUser));
+  })
+);
+
+app.get(
+  '/api/profile/:id/following',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req, 'id');
+    const user = await User.findById(id).select('following').lean().exec();
+    if (!user) throw new NotFoundError('User');
+    const following = await User.find({ _id: { $in: user.following || [] } }).select('name email avatarUrl').lean().exec();
+    res.json(following.map(sanitizeUser));
   })
 );
 
@@ -914,8 +1041,17 @@ app.delete(
 
 app.get(
   '/api/requests',
-  asyncHandler(async (_req: Request, res: Response) => {
-    const result = await ExchangeRequest.find().lean().exec();
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const result = await ExchangeRequest.find({
+      $or: [
+        { 'requester._id': req.userId },
+        { 'responder._id': req.userId },
+      ],
+    })
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec();
     res.json(result);
   })
 );
@@ -948,38 +1084,20 @@ app.get(
 
 app.get(
   '/api/requests/:id',
-  asyncHandler(async (req: Request, res: Response) => {
-    const id = paramId(req);
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      throw new AppError('Invalid request ID format', 400);
-    }
-    const request = await ExchangeRequest.findById(id).lean().exec();
-    if (!request) throw new NotFoundError('Request');
-    res.json(request);
-  })
-);
-
-app.post(
-  '/api/requests',
   authMiddleware,
   asyncHandler(async (req: AuthRequest, res: Response) => {
-    const result = await ExchangeRequest.find({ 'responder._id': req.userId })
-      .sort({ updatedAt: -1 })
-      .lean()
-      .exec();
-    res.json(result);
-  })
-);
-
-app.get(
-  '/api/requests/:id',
-  asyncHandler(async (req: Request, res: Response) => {
     const id = paramId(req);
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new AppError('Invalid request ID format', 400);
     }
     const request = await ExchangeRequest.findById(id).lean().exec();
     if (!request) throw new NotFoundError('Request');
+
+    const isParty = request.requester._id === req.userId || request.responder._id === req.userId;
+    if (!isParty) {
+      throw new ForbiddenError('You are not part of this exchange');
+    }
+
     res.json(request);
   })
 );

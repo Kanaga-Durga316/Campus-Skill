@@ -392,41 +392,71 @@ const CourseCard: React.FC<{
           <InfoItem label="Submitted" value={course.submittedAt ? new Date(course.submittedAt).toLocaleDateString() : 'N/A'} icon="📅" />
         </div>
 
-        {/* Resources */}
-        <div className="space-y-3 mb-5">
+        {/* Documents & Resources */}
+        <div className="mb-5">
+          <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-3">📎 Uploaded Documents & Resources</h4>
+
+          <div className="space-y-2 mb-3">
+            {course.notesFile && (
+              <DocumentItem icon="📄" label="Course Notes PDF" fileName={course.notesFile} href={`/uploads/${course.notesFile}`} />
+            )}
+            {course.thumbnail && (
+              <DocumentItem icon="🖼️" label="Course Thumbnail" fileName={course.thumbnail} href={course.thumbnail.startsWith('http') ? course.thumbnail : `/uploads/${course.thumbnail}`} />
+            )}
+          </div>
+
+          <div className="space-y-2 mb-3">
+            {course.videoLinks && course.videoLinks.length > 0 && (
+              <LinkRow label="🎥 YouTube Videos" items={course.videoLinks} />
+            )}
+            {course.recordedVideoLinks && course.recordedVideoLinks.length > 0 && (
+              <LinkRow label="📹 Recorded Videos" items={course.recordedVideoLinks} />
+            )}
+            {course.referenceLinks && course.referenceLinks.length > 0 && (
+              <LinkRow label="🔗 Reference Links" items={course.referenceLinks} />
+            )}
+            {course.githubLink && (
+              <LinkRow label="💻 GitHub Repository" items={[course.githubLink]} />
+            )}
+            {course.liveClassLink && (
+              <LinkRow label="📲 Live Class Link" items={[course.liveClassLink]} />
+            )}
+          </div>
+
+          <div className="space-y-3 mb-3">
+            {course.notes && (
+              <div>
+                <span className="text-xs text-slate-500 flex items-center gap-1 mb-1">📝 Course Notes (text)</span>
+                <div className="text-sm text-slate-300 bg-slate-900/20 border border-slate-700/30 rounded-xl p-3 line-clamp-3">{course.notes}</div>
+              </div>
+            )}
+            {course.courseDescription && (
+              <div>
+                <span className="text-xs text-slate-500 flex items-center gap-1 mb-1">📋 Course Description</span>
+                <div className="text-sm text-slate-300 bg-slate-900/20 border border-slate-700/30 rounded-xl p-3 line-clamp-3">{course.courseDescription}</div>
+              </div>
+            )}
+            {course.assignments && course.assignments.length > 0 && (
+              <div>
+                <span className="text-xs text-slate-500 flex items-center gap-1 mb-1">📋 Assignments</span>
+                <ul className="list-disc list-inside space-y-1">
+                  {course.assignments.map((a, i) => (
+                    <li key={i} className="text-sm text-slate-300">{a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
           {course.tags && course.tags.length > 0 && (
-            <ResourceRow label="🏷️ Tags" items={course.tags} variant="tags" />
-          )}
-
-          {course.notesFile && (
-            <ResourceRow label="📄 Notes File" items={[course.notesFile]} variant="link" prefix="/uploads/" />
-          )}
-
-          {course.notes && (
             <div>
-              <span className="text-xs text-slate-500">📝 Notes:</span>
-              <p className="text-sm text-slate-300 mt-1 line-clamp-2">{course.notes}</p>
+              <span className="text-xs text-slate-500 flex items-center gap-1 mb-1">🏷️ Tags</span>
+              <div className="flex flex-wrap gap-1.5">
+                {course.tags.map((tag, i) => (
+                  <span key={i} className="px-2.5 py-1 bg-slate-700/50 text-slate-300 text-xs rounded-full">{tag}</span>
+                ))}
+              </div>
             </div>
-          )}
-
-          {course.videoLinks && course.videoLinks.length > 0 && (
-            <ResourceRow label="🎥 YouTube Links" items={course.videoLinks} variant="link" />
-          )}
-
-          {course.referenceLinks && course.referenceLinks.length > 0 && (
-            <ResourceRow label="🔗 Reference Links" items={course.referenceLinks} variant="link" />
-          )}
-
-          {course.githubLink && (
-            <ResourceRow label="💻 GitHub" items={[course.githubLink]} variant="link" />
-          )}
-
-          {course.liveClassLink && (
-            <ResourceRow label="📹 Live Class" items={[course.liveClassLink]} variant="link" />
-          )}
-
-          {course.assignments && course.assignments.length > 0 && (
-            <ResourceRow label="📋 Assignments" items={course.assignments} variant="text" />
           )}
         </div>
 
@@ -442,34 +472,32 @@ const CourseCard: React.FC<{
           </div>
         )}
 
-        {/* Modules */}
+        {/* Module-level documents */}
         {course.modules && course.modules.length > 0 && (
           <div className="mb-5">
-            <span className="text-xs font-semibold text-slate-500 flex items-center gap-1 mb-2">
-              📂 Modules ({course.modules.length})
-            </span>
-            <div className="mt-1 space-y-2">
+            <h4 className="text-xs font-semibold text-slate-400 uppercase flex items-center gap-2 mb-3">📂 Module Documents</h4>
+            <div className="space-y-3">
               {course.modules.map((mod: any) => (
-                <div key={mod._id} className="text-sm text-slate-300 bg-slate-900/30 border border-slate-700/50 rounded-lg p-3 transition-all duration-300">
-                  <span className="font-medium text-slate-200">{mod.title}</span>
-                  {mod.notes && <p className="mt-1 text-slate-400 line-clamp-1">Notes: {mod.notes.substring(0, 100)}{mod.notes.length > 100 && '...'}</p>}
-                  {mod.notesFile && (
-                    <a href={`/uploads/${mod.notesFile}`} target="_blank" rel="noreferrer" className="text-indigo-400 underline text-xs block mt-1 hover:text-indigo-300">
-                      Preview notes file
-                    </a>
-                  )}
-                  {mod.videoLinks && mod.videoLinks.length > 0 && (
-                    <div className="mt-1 space-y-1">
-                      {mod.videoLinks.map((v: string, i: number) => (
-                        <a key={i} href={v} target="_blank" rel="noreferrer" className="text-indigo-400 underline text-xs block truncate hover:text-indigo-300">
-                          {v}
-                        </a>
-                      ))}
-                    </div>
-                  )}
-                  {mod.quizzes && mod.quizzes.length > 0 && (
-                    <span className="text-slate-500 text-xs">Quiz questions: {mod.quizzes.length}</span>
-                  )}
+                <div key={mod._id} className="bg-slate-900/20 border border-slate-700/30 rounded-xl p-3 transition-all duration-300">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-sm font-medium text-slate-200">{mod.title}</span>
+                    {mod.quizzes && mod.quizzes.length > 0 && (
+                      <span className="text-xs px-2 py-0.5 bg-purple-500/20 text-purple-300 rounded-full">
+                        {mod.quizzes.length} quiz{mod.quizzes.length > 1 ? 'es' : ''}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1 ml-2">
+                    {mod.notesFile && (
+                      <DocumentItem icon="📄" label="Module Notes PDF" fileName={mod.notesFile} href={`/uploads/${mod.notesFile}`} small />
+                    )}
+                    {mod.notes && (
+                      <p className="text-xs text-slate-400 line-clamp-1">Notes: {mod.notes.substring(0, 80)}{mod.notes.length > 80 && '...'}</p>
+                    )}
+                    {mod.videoLinks && mod.videoLinks.length > 0 && (
+                      <LinkRow label="🎥 Videos" items={mod.videoLinks} small />
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -533,43 +561,60 @@ const InfoItem: React.FC<{ label: string; value: string; icon: string }> = ({ la
   </div>
 );
 
-const ResourceRow: React.FC<{
+const DocumentItem: React.FC<{
+  icon: string;
+  label: string;
+  fileName: string;
+  href: string;
+  small?: boolean;
+}> = ({ icon, label, fileName, href, small }) => (
+  <div className={`flex items-center gap-3 p-3 bg-slate-900/20 border border-slate-700/30 rounded-xl transition-all duration-300 hover:bg-slate-900/40 hover:border-slate-600`}>
+    <span className="text-lg">{icon}</span>
+    <div className="flex-1 min-w-0">
+      <span className={`text-slate-400 ${small ? 'text-xs' : 'text-sm'}`}>{label}:</span>
+      <span className={`text-slate-300 font-medium ${small ? 'text-xs' : 'text-sm'} block truncate`}>{fileName}</span>
+    </div>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className={`
+        text-xs px-3 py-1.5 rounded-lg font-medium
+        bg-gradient-to-r from-indigo-500 to-purple-500 text-white
+        hover:from-indigo-400 hover:to-purple-400
+        hover:shadow-lg hover:shadow-indigo-500/30
+        transition-all duration-300
+      `}
+    >
+      Preview
+    </a>
+  </div>
+);
+
+const LinkRow: React.FC<{
   label: string;
   items: string[];
-  variant: 'link' | 'text' | 'tags';
-  prefix?: string;
-}> = ({ label, items, variant, prefix }) => (
+  small?: boolean;
+}> = ({ label, items, small }) => (
   <div>
-    <span className="text-xs text-slate-500 flex items-center gap-1">{label}</span>
-    <div className="mt-1 space-y-1">
-      {items.map((item, i) => {
-        const displayText = prefix ? item : item;
-        if (variant === 'link') {
-          return (
-            <a
-              key={i}
-              href={prefix ? `${prefix}${item}` : item}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-indigo-400 underline truncate max-w-xs block hover:text-indigo-300 transition-colors"
-            >
-              {displayText}
-            </a>
-          );
-        }
-        if (variant === 'tags') {
-          return (
-            <span key={i} className="inline-block px-2 py-0.5 bg-slate-700/50 text-slate-300 text-xs rounded-full mr-1 mb-1">
-              {item}
-            </span>
-          );
-        }
-        return (
-          <p key={i} className="text-xs text-slate-300 ml-1 line-clamp-1">
-            {item}
-          </p>
-        );
-      })}
+    <span className={`text-slate-500 flex items-center gap-1 mb-1 ${small ? 'text-xs' : 'text-xs'}`}>{label}</span>
+    <div className="space-y-1">
+      {items.map((item, i) => (
+        <a
+          key={i}
+          href={item}
+          target="_blank"
+          rel="noreferrer"
+          className={`
+            text-indigo-400 underline truncate max-w-xs block
+            hover:text-indigo-300 hover:underline
+            transition-all duration-300
+            ${small ? 'text-xs' : 'text-xs'}
+          `}
+        >
+          {item}
+        </a>
+      ))}
     </div>
   </div>
 );

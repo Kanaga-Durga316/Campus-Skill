@@ -55,7 +55,7 @@ const ExchangeRequestSchema = new Schema<IExchangeRequest>({
     liveClassLink: { type: String, default: '' },
     modules: { type: [Schema.Types.Mixed], default: [] },
   },
-  skillOffered: { _id: { type: String, required: true }, title: { type: String, required: true } },
+  skillOffered: { _id: { type: String, default: '' }, title: { type: String, default: '—' } },
   status: { type: String, enum: ['open', 'pending', 'accepted', 'rejected', 'cancelled', 'completed'], default: 'open' },
   message: { type: String, default: '' },
   scheduledAt: { type: String, default: '' },
