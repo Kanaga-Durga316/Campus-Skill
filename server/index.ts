@@ -280,11 +280,11 @@ app.put(
     }
 
     const allowed = [
-      'bio', 'avatarUrl', 'coverImage', 'location', 'preferredMode', 'experienceLevel',
-      'studentId', 'college', 'university', 'semester', 'cgpa', 'graduationYear', 'careerGoal',
-      'academicInterests', 'skillsTeaching', 'skillsLearning', 'certificates', 'achievements',
-      'socialLinks', 'profileVisibility', 'privacySettings', 'phoneNumber', 'twoFactorEnabled',
-      'portfolioLinks'
+      'name', 'bio', 'avatarUrl', 'coverImage', 'location', 'preferredMode', 'experienceLevel',
+      'sessionDurationHours', 'portfolioLinks', 'verificationStatus', 'studentId', 'college',
+      'university', 'semester', 'cgpa', 'graduationYear', 'careerGoal', 'academicInterests',
+      'skillsTeaching', 'skillsLearning', 'certificates', 'achievements', 'socialLinks',
+      'profileVisibility', 'privacySettings', 'phoneNumber', 'twoFactorEnabled'
     ];
 
     const update: any = {};

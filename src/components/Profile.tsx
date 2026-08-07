@@ -70,10 +70,8 @@ const Profile: React.FC = () => {
           setCalendarEvents(calRes || []);
         }
 
-        const me = await fetchJSON(`/users/${currentUserId}/followers`).catch(() => []);
-        if (mounted) {
-          setFollowing((me as any[]).some((f: any) => f._id === userId));
-        }
+        if (!mounted) return;
+        setFollowing((profileRes?.followers || []).includes(currentUserId));
       } catch (err: any) {
         if (mounted) setError(err.message || 'Failed to load profile');
       } finally {
@@ -148,8 +146,8 @@ const Profile: React.FC = () => {
 
   const handleRemoveBookmark = async (skillId: string) => {
     try {
-      const updated = await fetchJSON(`/users/${userId}/bookmarks/${skillId}`, { method: 'DELETE' });
-      setBookmarks(updated.bookmarks || []);
+      await fetchJSON(`/users/${userId}/bookmarks/${skillId}`, { method: 'DELETE' });
+      setBookmarks((prev) => prev.filter((s: any) => s._id !== skillId));
     } catch (err: any) {
       console.error(err.message);
     }
