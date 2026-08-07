@@ -351,6 +351,256 @@ app.get(
   })
 );
 
+// ===== USER REVIEWS =====
+
+app.get(
+  '/api/users/:id/reviews',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req, 'id');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+    const reviews = await Review.find({ revieweeId: id })
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+
+    const populated = await Promise.all(
+      reviews.map(async (r: any) => {
+        const reviewer = await User.findById(r.reviewerId).select('name email avatarUrl').lean().exec();
+        return {
+          ...r,
+          reviewer: reviewer ? sanitizeUser(reviewer) : null,
+        };
+      })
+    );
+
+    res.json(populated);
+  })
+);
+
+// ===== USER BOOKMARKS =====
+
+app.get(
+  '/api/users/:id/skills',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req, 'id');
+    const result = await Skill.find({ 'owner._id': id }).sort({ createdAt: -1 }).lean().exec();
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/users/:id/learn-skills',
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req, 'id');
+    const result = await LearnSkill.find({ 'owner._id': id }).sort({ createdAt: -1 }).lean().exec();
+    res.json(result);
+  })
+);
+
+app.get(
+  '/api/users/:id/bookmarks',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only view your own bookmarks');
+    }
+    const user = await User.findById(id).select('bookmarks').lean().exec();
+    if (!user) throw new NotFoundError('User');
+
+    const bookmarkIds = user.bookmarks || [];
+    const skills = await Skill.find({ _id: { $in: bookmarkIds } }).lean().exec();
+    res.json(skills);
+  })
+);
+
+app.post(
+  '/api/users/:id/bookmarks',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only bookmark for yourself');
+    }
+    const { skillId } = req.body;
+    if (!skillId) throw new AppError('Skill ID is required', 400);
+
+    const updated = await User.findByIdAndUpdate(
+      id,
+      { $addToSet: { bookmarks: skillId } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(sanitizeUser(updated));
+  })
+);
+
+app.delete(
+  '/api/users/:id/bookmarks/:skillId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const skillId = paramId(req, 'skillId');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only manage your own bookmarks');
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      id,
+      { $pull: { bookmarks: skillId } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(sanitizeUser(updated));
+  })
+);
+
+// ===== USER CALENDAR =====
+
+app.get(
+  '/api/users/:id/calendar',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only view your own calendar');
+    }
+    const user = await User.findById(id).select('calendarEvents').lean().exec();
+    if (!user) throw new NotFoundError('User');
+    res.json(user.calendarEvents || []);
+  })
+);
+
+app.post(
+  '/api/users/:id/calendar',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only manage your own calendar');
+    }
+    const { title, date, type, description } = req.body;
+    if (!title || !date) throw new AppError('Title and date are required', 400);
+
+    const event = {
+      _id: nid(),
+      title: String(title).trim(),
+      date: String(date),
+      type: type || 'event',
+      description: description ? String(description).trim() : '',
+    };
+
+    const updated = await User.findByIdAndUpdate(
+      id,
+      { $push: { calendarEvents: event } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(sanitizeUser(updated));
+  })
+);
+
+app.delete(
+  '/api/users/:id/calendar/:eventId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const eventId = paramId(req, 'eventId');
+    if (req.userId !== id) {
+      throw new ForbiddenError('You can only manage your own calendar');
+    }
+
+    const updated = await User.findByIdAndUpdate(
+      id,
+      { $pull: { calendarEvents: { _id: eventId } } },
+      { new: true }
+    ).lean().exec();
+
+    res.json(sanitizeUser(updated));
+  })
+);
+
+// ===== USER ACTIVITY =====
+
+app.get(
+  '/api/users/:id/activity',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req, 'id');
+    const activities: any[] = [];
+
+    const userSkills = await Skill.find({ 'owner._id': id }).sort({ createdAt: -1 }).limit(5).lean().exec();
+    userSkills.forEach((s: any) => {
+      activities.push({
+        id: `skill_${s._id}`,
+        type: 'course_created',
+        message: `Created course "${s.title}"`,
+        date: s.createdAt,
+        icon: '📚',
+      });
+    });
+
+    const userLearnSkills = await LearnSkill.find({ 'owner._id': id }).sort({ createdAt: -1 }).limit(5).lean().exec();
+    userLearnSkills.forEach((ls: any) => {
+      activities.push({
+        id: `learn_${ls._id}`,
+        type: 'learning_goal',
+        message: `Added learning goal "${ls.title}"`,
+        date: ls.createdAt,
+        icon: '🎯',
+      });
+    });
+
+    const userRequests = await ExchangeRequest.find({
+      $or: [{ 'requester._id': id }, { 'responder._id': id }],
+    })
+      .sort({ updatedAt: -1 })
+      .limit(10)
+      .lean()
+      .exec();
+
+    userRequests.forEach((r: any) => {
+      const isRequester = r.requester?._id === id;
+      const label = isRequester ? 'Sent request' : 'Received request';
+      activities.push({
+        id: `req_${r._id}`,
+        type: r.status === 'accepted' ? 'request_accepted' : r.status === 'rejected' ? 'request_rejected' : r.status === 'completed' ? 'course_completed' : 'request_sent',
+        message: `${label} for "${r.skillRequested?.title || 'a skill'}" — ${r.status}`,
+        date: r.updatedAt || r.createdAt,
+        icon: r.status === 'accepted' ? '🤝' : r.status === 'rejected' ? '❌' : r.status === 'completed' ? '🎉' : '📬',
+      });
+    });
+
+    const userReviews = await Review.find({ revieweeId: id }).sort({ createdAt: -1 }).limit(5).lean().exec();
+    userReviews.forEach((rv: any) => {
+      activities.push({
+        id: `review_${rv._id}`,
+        type: 'review_received',
+        message: `Received a ${rv.rating}-star review`,
+        date: rv.createdAt,
+        icon: '⭐',
+      });
+    });
+
+    const userNotifications = await Notification.find({ userId: id }).sort({ createdAt: -1 }).limit(5).lean().exec();
+    userNotifications.forEach((n: any) => {
+      activities.push({
+        id: `notif_${n._id}`,
+        type: n.type,
+        message: n.message,
+        date: n.createdAt,
+        icon: '🔔',
+      });
+    });
+
+    activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    res.json(activities.slice(0, 20));
+  })
+);
+
 // ===== SKILL ROUTES =====
 
 app.get(

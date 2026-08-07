@@ -21,6 +21,7 @@ import StudentCourse from './components/StudentCourse';
 import StudentProfile from './components/StudentProfile';
 import StudentsList from './components/StudentsList';
 import AdminDashboard from './components/AdminDashboard';
+import Profile from './components/Profile';
 
 /**
  * HomePage Component
@@ -78,6 +79,8 @@ const App: React.FC = () => {
             <Route path="/learn/:requestId" element={<StudentCourse />} />
             {/* Student Profile page route */}
             <Route path="/student/:studentId" element={<StudentProfile />} />
+            {/* Profile page route */}
+            <Route path="/profile/:userId" element={<Profile />} />
             {/* Students List page route */}
             <Route path="/students" element={<StudentsList />} />
             {/* Admin Dashboard route */}
