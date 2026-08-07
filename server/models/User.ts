@@ -9,6 +9,8 @@ export interface IUser extends Document<string> {
   bio?: string;
   avatarUrl?: string;
   coverImage?: string;
+  department?: string;
+  year?: string;
   location?: string;
   preferredMode?: string;
   experienceLevel?: string;
@@ -87,6 +89,8 @@ const UserSchema = new Schema<IUser>({
   bio: { type: String, default: '' },
   avatarUrl: { type: String, default: '' },
   coverImage: { type: String, default: '' },
+  department: { type: String, default: '' },
+  year: { type: String, default: '' },
   location: { type: String, default: '' },
   preferredMode: { type: String, default: 'online' },
   experienceLevel: { type: String, default: 'beginner' },
