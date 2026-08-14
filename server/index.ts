@@ -19,10 +19,11 @@ import {
   requireFields,
   isValidEmail,
 } from './utils/middleware.js';
-import { uploadNotes, uploadSharedFile } from './utils/upload.js';
+import { uploadNotes, uploadSharedFile, uploadCsv } from './utils/upload.js';
 import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
 import { connectDatabase } from '../config/db.js';
 import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review, ChatRoom, Announcement, Meeting, Poll, DiscussionPost, DiscussionReply, SharedFile, StudyGroup, Attendance } from './models/index.js';
+import { importCsv } from './utils/csvImport.js';
 
 dotenv.config();
 
@@ -1198,6 +1199,32 @@ app.get(
       rejectedCourses: rejected,
       changeRequests: changesRequested,
     });
+  })
+);
+
+// ===== ADMIN CSV IMPORT =====
+
+app.post(
+  '/api/admin/import-csv',
+  adminMiddleware,
+  uploadCsv.single('csvFile'),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const file = req.file as Express.Multer.File | undefined;
+
+    if (!file) {
+      throw new AppError('CSV file is required', 400);
+    }
+
+    if (!file.originalname.toLowerCase().endsWith('.csv')) {
+      throw new AppError('Only CSV files are allowed', 400);
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      throw new AppError('CSV file size must be under 5MB', 400);
+    }
+
+    const summary = await importCsv(file.buffer);
+    res.status(200).json(summary);
   })
 );
 

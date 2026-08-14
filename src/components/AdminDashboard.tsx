@@ -3,6 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
 
+interface CsvPreviewRow {
+  name: string;
+  email: string;
+  collegeName: string;
+  department: string;
+  year: string;
+  skills: string;
+  offerSkills: string;
+  wantedSkills: string;
+}
+
 const getStoredUser = () => {
   try {
     const u = localStorage.getItem('user');
@@ -67,6 +78,107 @@ const AdminDashboard: React.FC = () => {
   const [adminComments, setAdminComments] = useState('');
   const [processing, setProcessing] = useState(false);
   const [categories, setCategories] = useState<string[]>([]);
+  const [showImport, setShowImport] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<CsvPreviewRow[]>([]);
+  const [csvError, setCsvError] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importSummary, setImportSummary] = useState<any>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  const parseCsvPreview = (file: File): Promise<CsvPreviewRow[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = reader.result as string;
+        const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+        if (lines.length < 2) {
+          resolve([]);
+          return;
+        }
+        const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+        const rows: CsvPreviewRow[] = [];
+        for (let i = 1; i < Math.min(lines.length, 11); i++) {
+          const values = lines[i].split(',').map((v) => v.trim().replace(/^"|"$/g, ''));
+          const row: any = {};
+          headers.forEach((h, idx) => {
+            row[h] = values[idx] || '';
+          });
+          rows.push(row as CsvPreviewRow);
+        }
+        resolve(rows);
+      };
+      reader.onerror = () => reject(new Error('Failed to read CSV file'));
+      reader.readAsText(file);
+    });
+  };
+
+  const handleCsvFile = async (file: File) => {
+    setCsvError('');
+    setImportSummary(null);
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setCsvError('Only CSV files are allowed');
+      return;
+    }
+    setCsvFile(file);
+    try {
+      const preview = await parseCsvPreview(file);
+      setCsvPreview(preview);
+    } catch (err: any) {
+      setCsvError(err.message || 'Failed to parse CSV');
+    }
+  };
+
+  const handleCsvChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleCsvFile(file);
+  };
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleCsvFile(file);
+  };
+
+  const handleImportCsv = async () => {
+    if (!csvFile) return;
+    setImporting(true);
+    setCsvError('');
+    setImportSummary(null);
+    try {
+      const formData = new FormData();
+      formData.append('csvFile', csvFile);
+      const result = await fetchJSON('/admin/import-csv', {
+        method: 'POST',
+        body: formData,
+      });
+      setImportSummary(result);
+      const [statsRes, coursesRes] = await Promise.all([
+        fetchJSON('/admin/stats'),
+        fetchJSON('/admin/courses'),
+      ]);
+      setStats(statsRes);
+      setCourses(coursesRes as AdminSkill[]);
+      const cats = Array.from(new Set<string>(coursesRes.map((c: AdminSkill) => c.category))).sort();
+      setCategories(cats);
+    } catch (err: any) {
+      setCsvError(err.message || 'Import failed');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   useEffect(() => {
     if (!storedUser || storedUser.role !== 'admin') {
@@ -231,9 +343,162 @@ const AdminDashboard: React.FC = () => {
               <StatCard label="Pending" value={stats.pendingApprovals} icon="⏳" color="from-amber-500 to-amber-600" />
               <StatCard label="Approved" value={stats.approvedCourses} icon="✅" color="from-emerald-500 to-emerald-600" />
               <StatCard label="Rejected" value={stats.rejectedCourses} icon="❌" color="from-red-500 to-red-600" />
-              <StatCard label="Change Requests" value={stats.changeRequests} icon="📝" color="from-orange-500 to-orange-600" />
+               <StatCard label="Change Requests" value={stats.changeRequests} icon="📝" color="from-orange-500 to-orange-600" />
             </div>
           )}
+
+          {/* CSV Import Section */}
+          <div className="mb-8">
+            <button
+              onClick={() => setShowImport(!showImport)}
+              className="w-full px-6 py-4 bg-slate-800/50 border border-slate-700/50 rounded-2xl text-left hover:bg-slate-800 transition-all duration-300 flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📥</span>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-100">Import Students from CSV</h3>
+                  <p className="text-sm text-slate-400">Bulk import users, skills, and courses</p>
+                </div>
+              </div>
+              <span className={`text-slate-400 transition-transform duration-300 ${showImport ? 'rotate-180' : ''}`}>▼</span>
+            </button>
+
+            {showImport && (
+              <div className="mt-4 bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 shadow-xl animate-fadeIn">
+                {!csvFile ? (
+                  <div
+                    className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-300 ${
+                      dragActive ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-700 hover:border-slate-600'
+                    }`}
+                    onDragEnter={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDragOver={handleDrag}
+                    onDrop={handleDrop}
+                  >
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleCsvChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <div className="text-5xl mb-4">📁</div>
+                    <p className="text-lg font-medium text-slate-200 mb-2">Drag and drop your CSV file here</p>
+                    <p className="text-sm text-slate-400 mb-4">or click to browse</p>
+                    <p className="text-xs text-slate-500">Supported format: .csv (max 5MB)</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">📄</span>
+                        <div>
+                          <p className="font-medium text-slate-200">{csvFile.name}</p>
+                          <p className="text-xs text-slate-400">{(csvFile.size / 1024).toFixed(1)} KB</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => { setCsvFile(null); setCsvPreview([]); setImportSummary(null); setCsvError(''); }}
+                        className="px-4 py-2 text-sm text-red-400 hover:text-red-300 border border-red-500/30 rounded-xl hover:bg-red-500/10 transition-all"
+                      >
+                        Remove
+                      </button>
+                    </div>
+
+                    {csvPreview.length > 0 && (
+                      <div className="bg-slate-900/30 border border-slate-700/30 rounded-xl overflow-hidden">
+                        <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-2 border-b border-slate-700/30">
+                          Preview (first {csvPreview.length} records)
+                        </p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-slate-900/50">
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">Name</th>
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">Email</th>
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">College</th>
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">Department</th>
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">Year</th>
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">Offer Skills</th>
+                                <th className="px-4 py-2 text-left text-slate-400 font-medium">Wanted Skills</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {csvPreview.map((row, idx) => (
+                                <tr key={idx} className="border-t border-slate-700/20">
+                                  <td className="px-4 py-2 text-slate-200">{row.name}</td>
+                                  <td className="px-4 py-2 text-slate-300">{row.email}</td>
+                                  <td className="px-4 py-2 text-slate-300">{row.collegeName}</td>
+                                  <td className="px-4 py-2 text-slate-300">{row.department}</td>
+                                  <td className="px-4 py-2 text-slate-300">{row.year}</td>
+                                  <td className="px-4 py-2 text-slate-300">{row.offerSkills}</td>
+                                  <td className="px-4 py-2 text-slate-300">{row.wantedSkills}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {csvError && (
+                      <div className="p-4 bg-red-500/20 border border-red-500/30 text-red-300 rounded-xl">
+                        {csvError}
+                      </div>
+                    )}
+
+                    {importSummary && (
+                      <div className="p-4 bg-slate-900/30 border border-slate-700/30 rounded-xl space-y-2">
+                        <h4 className="font-semibold text-slate-200">Import Summary</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
+                            <p className="text-2xl font-bold text-indigo-400">{importSummary.usersCreated}</p>
+                            <p className="text-xs text-slate-400">Users Created</p>
+                          </div>
+                          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
+                            <p className="text-2xl font-bold text-amber-400">{importSummary.usersSkipped}</p>
+                            <p className="text-xs text-slate-400">Users Skipped</p>
+                          </div>
+                          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
+                            <p className="text-2xl font-bold text-emerald-400">{importSummary.skillsCreated + importSummary.coursesCreated}</p>
+                            <p className="text-xs text-slate-400">Skills/Courses Created</p>
+                          </div>
+                          <div className="bg-slate-800/50 rounded-xl p-3 text-center">
+                            <p className="text-2xl font-bold text-slate-300">{importSummary.totalRecords}</p>
+                            <p className="text-xs text-slate-400">Total Records</p>
+                          </div>
+                        </div>
+                        {importSummary.errors.length > 0 && (
+                          <div className="mt-3 max-h-40 overflow-y-auto space-y-1">
+                            {importSummary.errors.map((err: string, idx: number) => (
+                              <p key={idx} className="text-xs text-red-300 bg-red-500/10 rounded px-2 py-1">{err}</p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <button
+                      onClick={handleImportCsv}
+                      disabled={importing}
+                      className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold rounded-2xl hover:from-indigo-500 hover:to-purple-500 hover:shadow-lg hover:shadow-indigo-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2"
+                    >
+                      {importing ? (
+                        <>
+                          <span className="animate-spin">⏳</span>
+                          <span>Importing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>📥</span>
+                          <span>Import CSV</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Filters */}
           <div className="bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6 mb-8 shadow-xl hover:shadow-indigo-500/20 transition-shadow duration-300">

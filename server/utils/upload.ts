@@ -42,4 +42,23 @@ const upload = multer({
 export const uploadNotes = upload.single('notesFile');
 export const uploadSharedFile = upload.single('file');
 
+const csvFilter = (_req: any, file: any, cb: any) => {
+  if (
+    file.mimetype === 'text/csv' ||
+    file.mimetype === 'application/csv' ||
+    file.mimetype === 'text/plain' ||
+    file.originalname.toLowerCase().endsWith('.csv')
+  ) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only CSV files are allowed'), false);
+  }
+};
+
+export const uploadCsv = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: csvFilter,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
 export default upload;
