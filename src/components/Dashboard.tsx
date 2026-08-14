@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
+import ThemeToggle from './ThemeToggle';
 
 /**
  * Dashboard Component
@@ -458,25 +459,39 @@ const WelcomeSection: React.FC<{
   onBrowse: () => void;
   onRequests: () => void;
   onSettings: () => void;
-}> = ({ user, onAddSkill, onBrowse, onRequests, onSettings }) => (
-  <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
-    {/* Gradient Header */}
-    <div className="h-24 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500"></div>
+}> = ({ user, onAddSkill, onBrowse, onRequests, onSettings }) => {
 
-    <div className="px-6 pb-6 -mt-12">
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-        {/* User Info */}
-        <div className="flex items-end space-x-4">
-          <div className="w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-3xl font-bold text-white shadow-lg border-4 border-white dark:border-slate-800">
-            {user.avatar}
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
+      {/* Gradient Header */}
+      <div className="relative h-28 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500">
+        <div className="absolute inset-0 flex items-center justify-between px-4 sm:px-6 lg:px-8">
+          {/* User Info */}
+          <div className="flex items-center space-x-4">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-xl flex items-center justify-center text-2xl sm:text-3xl font-bold text-white shadow-lg bg-gradient-to-br from-purple-500 to-pink-500">
+              {user.avatar}
+            </div>
+            <div className="hidden sm:block">
+              <h1 className="text-xl sm:text-2xl font-bold text-white">Welcome back, {user.name.split(' ')[0]}! 👋</h1>
+              <p className="text-white/80 text-sm">{user.department ? `${user.department} • ${user.year} Year` : 'Student'}</p>
+            </div>
           </div>
-          <div className="pb-1">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Welcome back, {user.name.split(' ')[0]}! 👋</h1>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">{user.department ? `${user.department} • ${user.year} Year` : 'Student'}</p>
+
+          {/* Theme Toggle */}
+          <div className="flex items-center">
+            <ThemeToggle />
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Mobile user info below avatar */}
+        <div className="absolute bottom-3 left-4 sm:hidden">
+          <h1 className="text-lg font-bold text-white">Welcome back, {user.name.split(' ')[0]}! 👋</h1>
+          <p className="text-white/80 text-xs">{user.department ? `${user.department} • ${user.year} Year` : 'Student'}</p>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="px-4 sm:px-6 pb-6 pt-4">
         <div className="flex flex-wrap gap-2">
           <ActionButton icon="➕" label="Add Skill" primary onClick={onAddSkill} />
           <ActionButton icon="🔍" label="Browse" onClick={onBrowse} />
@@ -485,8 +500,8 @@ const WelcomeSection: React.FC<{
         </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 /**
  * ActionButton Component
@@ -533,7 +548,7 @@ const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onVie
         <div
             key={skill.id}
             onClick={() => onViewDetails?.(skill.id)}
-            className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-xl p-4 border border-indigo-100 dark:border-indigo-800 hover:shadow-md transition-all duration-200 cursor-pointer hover:scale-[1.02]"
+            className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/60 dark:to-purple-900/60 rounded-xl p-4 border border-indigo-100 dark:border-indigo-800 hover:shadow-md transition-all duration-200 cursor-pointer hover:scale-[1.02]"
           >
           <div className="flex items-center justify-between mb-2">
             <span className="text-2xl">{skill.emoji}</span>
@@ -551,7 +566,7 @@ const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onVie
           <h3 className="font-semibold text-slate-900 dark:text-white mb-1">{skill.title}</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400">{skill.category}</p>
           {(skill.adminComments || skill.rejectionReason) && skill.status !== 'approved' && (
-            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/60 border border-amber-200 dark:border-amber-800 rounded-lg">
               <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
                 {skill.rejectionReason ? `Rejection: ${skill.rejectionReason}` : `Admin note: ${skill.adminComments}`}
               </p>
@@ -593,7 +608,7 @@ const CombinedMyLearningSection: React.FC<{
 
       <div className="space-y-3">
         {enrolled.map((item) => (
-          <div key={item.id} className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-800">
+          <div key={item.id} className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/60 rounded-xl border border-emerald-100 dark:border-emerald-800">
             <div>
               <h3 className="font-semibold text-slate-900 dark:text-white">{item.courseTitle}</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">👨‍🏫 {item.teacherName} • {item.status}</p>
@@ -608,7 +623,7 @@ const CombinedMyLearningSection: React.FC<{
         ))}
 
         {skills.map((skill) => (
-          <div key={skill.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-100 dark:border-amber-800">
+          <div key={skill.id} className="flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/60 rounded-xl border border-amber-100 dark:border-amber-800">
             <div className="flex items-center space-x-3">
               <span className="text-2xl">{skill.emoji}</span>
               <div>
@@ -654,7 +669,7 @@ const SuggestedStudentsSection: React.FC<{ students: Student[]; onViewAll: () =>
         <div
             key={student.id}
             onClick={() => onViewProfile?.(student.id)}
-            className="flex items-center space-x-3 p-3 bg-slate-50 dark:bg-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-600 transition-all duration-200 cursor-pointer hover:scale-[1.02]"
+            className="flex items-center space-x-3 p-3 bg-slate-50 dark:bg-slate-600 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-500 transition-all duration-200 cursor-pointer hover:scale-[1.02]"
           >
           <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white ${
             student.available
@@ -705,7 +720,7 @@ const TeacherStudentsSection: React.FC<{
     <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">👥 Students Learning My Skills</h2>
     <div className="space-y-3">
       {items.map((item) => (
-        <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-700 rounded-xl">
+        <div key={item.id} className="p-4 bg-slate-50 dark:bg-slate-600 rounded-xl">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <h3 className="font-semibold text-slate-900 dark:text-white">{item.studentName}</h3>
@@ -883,7 +898,7 @@ const RecentRequestsSection: React.FC<{ requests: Request[]; onViewAll: () => vo
           <div
           key={request.id}
           onClick={() => onViewRequest?.(request.id)}
-          className="p-3 bg-slate-50 dark:bg-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-600 transition-all duration-200 cursor-pointer"
+          className="p-3 bg-slate-50 dark:bg-slate-600 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-500 transition-all duration-200 cursor-pointer"
         >
             <div className="flex items-start justify-between mb-2">
               <div className="flex items-center space-x-2">

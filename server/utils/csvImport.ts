@@ -1,5 +1,4 @@
 import { parse } from 'csv-parse/sync';
-import { createReadStream } from 'fs';
 import { User, Skill, LearnSkill } from '../models/index.js';
 import { hashPassword } from './auth.js';
 
@@ -177,37 +176,63 @@ export async function importCsv(buffer: Buffer): Promise<ImportSummary> {
         }).lean().exec();
 
         if (!existingSkill) {
-          const hasCourseColumns = !!sanitizeString(row.courseTitle);
-          const isCourse = hasCourseColumns || offerSkills.length === 1;
+          const courseTitle = sanitizeString(row.courseTitle);
+          const courseDescription = sanitizeString(row.courseDescription);
+          const courseCategory = sanitizeString(row.courseCategory);
+          const courseLevel = sanitizeString(row.courseLevel);
+          const courseDuration = sanitizeString(row.courseDuration);
+          const courseObjectives = sanitizeString(row.courseObjectives);
+          const modulesRaw = sanitizeString(row.modules);
+          const videoLinks = splitCsv(row.videoLinks);
+          const referenceLinks = splitCsv(row.referenceLinks) || splitCsv(row.resources);
+          const assignmentLinks = splitCsv(row.assignmentLinks);
+          const liveClassLink = sanitizeString(row.liveClassLinks);
+          const notes = sanitizeString(row.notes) || courseObjectives;
 
-          if (isCourse && hasCourseColumns) {
-            const modulesRaw = sanitizeString(row.modules);
+          const hasCourseData = !!(courseTitle || courseDescription || courseCategory || courseLevel || courseDuration || modulesRaw || videoLinks.length > 0 || referenceLinks.length > 0 || assignmentLinks.length > 0 || liveClassLink);
+
+          if (hasCourseData) {
             const modules = modulesRaw
-              ? modulesRaw.split(/[;,]/).map((m) => m.trim()).filter(Boolean).map((title) => ({ title, description: '', notes: '', notesFile: '', videoLinks: [], recordedVideoLinks: [], liveClassLink: '', assignments: [], quizzes: [] }))
-              : [];
+              .split(/[;,]/)
+              .map((m) => m.trim())
+              .filter(Boolean)
+              .map((title) => ({
+                title,
+                description: '',
+                notes: '',
+                notesFile: '',
+                videoLinks: [],
+                recordedVideoLinks: [],
+                liveClassLink: '',
+                assignments: [],
+                quizzes: [],
+              }));
+
+            const title = offerSkills.length === 1 ? (courseTitle || skillName) : skillName;
+            const description = offerSkills.length === 1 ? (courseDescription || `Teaching skill: ${skillName}`) : `Teaching skill: ${skillName}`;
 
             await Skill.create({
-              title: sanitizeString(row.courseTitle) || skillName,
-              description: sanitizeString(row.courseDescription),
-              category: sanitizeString(row.courseCategory) || normalizeCategory(skillName),
+              title,
+              description,
+              category: courseCategory || normalizeCategory(skillName),
               tags: [skillName],
-              level: normalizeLevel(sanitizeString(row.courseLevel)),
+              level: normalizeLevel(courseLevel),
               owner: { _id: user._id, name: user.name },
-              courseDescription: sanitizeString(row.courseDescription),
-              notes: sanitizeString(row.notes) || sanitizeString(row.courseObjectives),
-              videoLinks: splitCsv(row.videoLinks),
+              courseDescription: offerSkills.length === 1 ? courseDescription : '',
+              notes,
+              videoLinks,
               recordedVideoLinks: [],
-              liveClassLink: sanitizeString(row.liveClassLinks) || undefined,
-              referenceLinks: splitCsv(row.referenceLinks) || splitCsv(row.resources),
-              assignments: splitCsv(row.assignmentLinks),
-              githubLink: undefined,
-              difficulty: undefined,
-              duration: sanitizeString(row.courseDuration) || undefined,
+              liveClassLink: liveClassLink || '',
+              referenceLinks,
+              assignments: assignmentLinks,
+              githubLink: '',
+              difficulty: '',
+              duration: courseDuration,
               published: false,
               status: 'pending',
               submittedAt: new Date(),
-              modules,
-              thumbnail: undefined,
+              modules: offerSkills.length === 1 ? modules : [],
+              thumbnail: '',
             });
             summary.coursesCreated++;
           } else {
@@ -216,7 +241,7 @@ export async function importCsv(buffer: Buffer): Promise<ImportSummary> {
               description: `Teaching skill: ${skillName}`,
               category: normalizeCategory(skillName),
               tags: [skillName],
-              level: normalizeLevel(undefined),
+              level: 'Beginner',
               owner: { _id: user._id, name: user.name },
               courseDescription: '',
               notes: '',
