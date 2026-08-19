@@ -20,7 +20,7 @@ import {
   isValidEmail,
 } from './utils/middleware.js';
 import { uploadNotes, uploadSharedFile, uploadCsv } from './utils/upload.js';
-import { computeProgress, gradeQuiz, generateCertificateId } from './utils/progress.js';
+import { computeProgress, gradeQuiz, generateCertificateId, PASS_THRESHOLD } from './utils/progress.js';
 import { connectDatabase } from '../config/db.js';
 import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review, ChatRoom, Announcement, Meeting, Poll, DiscussionPost, DiscussionReply, SharedFile, StudyGroup, Attendance } from './models/index.js';
 import { importCsv } from './utils/csvImport.js';
@@ -862,6 +862,112 @@ app.delete(
   })
 );
 
+// ===== EXERCISE ROUTES =====
+
+app.post(
+  '/api/skills/:id/modules/:moduleId/exercises',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can add exercises');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
+
+    const { title, description, difficulty, expectedOutcome } = req.body;
+    if (!title) throw new AppError('Exercise title is required', 400);
+
+    const newExercise = {
+      _id: new mongoose.Types.ObjectId().toString(),
+      title: String(title).trim(),
+      description: String(description || '').trim(),
+      difficulty: String(difficulty || '').trim(),
+      expectedOutcome: String(expectedOutcome || '').trim(),
+    };
+
+    await Skill.updateOne(
+      { _id: id, 'modules._id': moduleId },
+      { $push: { 'modules.$.exercises': newExercise } }
+    ).exec();
+
+    const updated = await Skill.findById(id).lean().exec();
+    res.status(201).json(updated);
+  })
+);
+
+app.put(
+  '/api/skills/:id/modules/:moduleId/exercises/:exerciseId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    const exerciseId = paramId(req, 'exerciseId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can update exercises');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
+    const exercise = mod.exercises.find((e: any) => e._id === exerciseId);
+    if (!exercise) throw new NotFoundError('Exercise');
+
+    const { title, description, difficulty, expectedOutcome } = req.body;
+    const update: any = {};
+    if (title !== undefined) update['modules.$.exercises.$.title'] = String(title).trim();
+    if (description !== undefined) update['modules.$.exercises.$.description'] = String(description || '').trim();
+    if (difficulty !== undefined) update['modules.$.exercises.$.difficulty'] = String(difficulty || '').trim();
+    if (expectedOutcome !== undefined) update['modules.$.exercises.$.expectedOutcome'] = String(expectedOutcome || '').trim();
+
+    await Skill.updateOne(
+      { _id: id, 'modules._id': moduleId, 'modules.exercises._id': exerciseId },
+      { $set: update }
+    ).exec();
+
+    const updated = await Skill.findById(id).lean().exec();
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/skills/:id/modules/:moduleId/exercises/:exerciseId',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    const exerciseId = paramId(req, 'exerciseId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+    if (skill.owner._id !== req.userId) throw new ForbiddenError('Only the owner can delete exercises');
+
+    const mod = skill.modules.find((m: any) => m._id === moduleId);
+    if (!mod) throw new NotFoundError('Module');
+    const exercise = mod.exercises.find((e: any) => e._id === exerciseId);
+    if (!exercise) throw new NotFoundError('Exercise');
+
+    await Skill.updateOne(
+      { _id: id, 'modules._id': moduleId },
+      { $pull: { 'modules.$.exercises': { _id: exerciseId } } }
+    ).exec();
+
+    res.json({ success: true });
+  })
+);
+
 // ===== QUIZ ROUTES =====
 
 app.post(
@@ -1002,6 +1108,8 @@ app.post(
         status: 'pending',
         submittedAt: new Date(),
         published: false,
+        rejectionReason: '',
+        adminComments: '',
       },
       { new: true }
     ).lean().exec();
@@ -1184,7 +1292,8 @@ app.get(
   '/api/admin/stats',
   adminMiddleware,
   asyncHandler(async (_req: Request, res: Response) => {
-    const [total, pending, approved, rejected, changesRequested] = await Promise.all([
+    const [totalUsers, total, pending, approved, rejected, changesRequested] = await Promise.all([
+      User.countDocuments({}),
       Skill.countDocuments({}),
       Skill.countDocuments({ status: 'pending' }),
       Skill.countDocuments({ status: 'approved' }),
@@ -1193,8 +1302,12 @@ app.get(
     ]);
 
     res.json({
-      totalCourses: total,
+      totalUsers,
+      totalSkills: total,
       pendingApprovals: pending,
+      approvedSkills: approved,
+      rejectedSkills: rejected,
+      pendingCourses: pending,
       approvedCourses: approved,
       rejectedCourses: rejected,
       changeRequests: changesRequested,
@@ -1602,6 +1715,136 @@ app.delete(
 
     await ExchangeRequest.findByIdAndDelete(id).exec();
     res.json({ success: true });
+  })
+);
+
+// ===== LEARNING PROGRESS ROUTES =====
+
+app.post(
+  '/api/requests/:id/quiz/submit',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
+    if (request.requester._id !== req.userId) {
+      throw new ForbiddenError('Only the student can submit a quiz');
+    }
+
+    const { answers } = req.body;
+    if (!answers || typeof answers !== 'object') {
+      throw new AppError('Answers object is required', 400);
+    }
+
+    const skill = await Skill.findById(request.skillRequested._id).lean().exec();
+    if (!skill) throw new NotFoundError('Course');
+
+    const result = gradeQuiz(answers, skill);
+    const quizStatus = result.total === 0 ? 'not_started' : result.score / result.total >= PASS_THRESHOLD ? 'passed' : 'failed';
+
+    const updated = await ExchangeRequest.findByIdAndUpdate(
+      id,
+      {
+        quizScore: result.score,
+        quizTotal: result.total,
+        quizStatus,
+      },
+      { new: true }
+    ).lean().exec();
+
+    res.json(updated);
+  })
+);
+
+app.post(
+  '/api/requests/:id/exercises/:exerciseId/complete',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const exerciseId = paramId(req, 'exerciseId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
+    if (request.requester._id !== req.userId) {
+      throw new ForbiddenError('Only the student can update progress');
+    }
+
+    const completed = new Set(request.completedExercises || []);
+    if (completed.has(exerciseId)) {
+      return res.json({ success: true, completedExercises: Array.from(completed) });
+    }
+    completed.add(exerciseId);
+
+    const skill = await Skill.findById(request.skillRequested._id).lean().exec();
+    const updated = await ExchangeRequest.findByIdAndUpdate(
+      id,
+      {
+        completedExercises: Array.from(completed),
+      },
+      { new: true }
+    ).lean().exec();
+
+    const progress = computeProgress({
+      completedModules: updated.completedModules,
+      assignmentStatus: updated.assignmentStatus,
+      quizStatus: updated.quizStatus,
+      liveClassAttended: updated.liveClassAttended,
+      skill: skill || request.skillRequested,
+    });
+
+    const final = await ExchangeRequest.findByIdAndUpdate(id, { progress }, { new: true }).lean().exec();
+    res.json(final);
+  })
+);
+
+app.post(
+  '/api/requests/:id/modules/:moduleId/complete',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    const moduleId = paramId(req, 'moduleId');
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+
+    const request = await ExchangeRequest.findById(id).lean().exec();
+    if (!request) throw new NotFoundError('Request');
+    if (request.requester._id !== req.userId) {
+      throw new ForbiddenError('Only the student can update progress');
+    }
+
+    const completed = new Set(request.completedModules || []);
+    if (completed.has(moduleId)) {
+      return res.json({ success: true, completedModules: Array.from(completed) });
+    }
+    completed.add(moduleId);
+
+    const skill = await Skill.findById(request.skillRequested._id).lean().exec();
+    const updated = await ExchangeRequest.findByIdAndUpdate(
+      id,
+      {
+        completedModules: Array.from(completed),
+      },
+      { new: true }
+    ).lean().exec();
+
+    const progress = computeProgress({
+      completedModules: updated.completedModules,
+      assignmentStatus: updated.assignmentStatus,
+      quizStatus: updated.quizStatus,
+      liveClassAttended: updated.liveClassAttended,
+      skill: skill || request.skillRequested,
+    });
+
+    const final = await ExchangeRequest.findByIdAndUpdate(id, { progress }, { new: true }).lean().exec();
+    res.json(final);
   })
 );
 

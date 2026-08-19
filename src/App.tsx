@@ -21,6 +21,7 @@ import StudentCourse from './components/StudentCourse';
 import StudentProfile from './components/StudentProfile';
 import StudentsList from './components/StudentsList';
 import AdminDashboard from './components/AdminDashboard';
+import AdminLoginPage from './components/AdminLogin';
 import Profile from './components/Profile';
 import Chat from './components/Chat';
 import Announcements from './components/Announcements';
@@ -92,6 +93,8 @@ const App: React.FC = () => {
             <Route path="/students" element={<StudentsList />} />
             {/* Admin Dashboard route */}
             <Route path="/admin" element={<AdminDashboard />} />
+            {/* Admin Login route */}
+            <Route path="/admin/login" element={<AdminLoginPage />} />
             {/* Chat route */}
             <Route path="/chat" element={<Chat />} />
             {/* Announcements route */}

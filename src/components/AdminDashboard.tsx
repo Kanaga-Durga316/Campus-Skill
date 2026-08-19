@@ -338,11 +338,12 @@ const AdminDashboard: React.FC = () => {
 
           {/* Stats Cards */}
           {stats && (
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
-              <StatCard label="Total Courses" value={stats.totalCourses} icon="📚" color="from-indigo-500 to-indigo-600" />
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-10">
+              <StatCard label="Total Users" value={stats.totalUsers} icon="👥" color="from-blue-500 to-blue-600" />
+              <StatCard label="Total Skills" value={stats.totalSkills} icon="📚" color="from-indigo-500 to-indigo-600" />
               <StatCard label="Pending" value={stats.pendingApprovals} icon="⏳" color="from-amber-500 to-amber-600" />
-              <StatCard label="Approved" value={stats.approvedCourses} icon="✅" color="from-emerald-500 to-emerald-600" />
-              <StatCard label="Rejected" value={stats.rejectedCourses} icon="❌" color="from-red-500 to-red-600" />
+              <StatCard label="Approved" value={stats.approvedSkills} icon="✅" color="from-emerald-500 to-emerald-600" />
+              <StatCard label="Rejected" value={stats.rejectedSkills} icon="❌" color="from-red-500 to-red-600" />
                <StatCard label="Change Requests" value={stats.changeRequests} icon="📝" color="from-orange-500 to-orange-600" />
             </div>
           )}

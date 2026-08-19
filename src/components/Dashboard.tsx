@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
-import ThemeToggle from './ThemeToggle';
 
 /**
  * Dashboard Component
@@ -21,6 +20,7 @@ interface Skill {
   status?: 'draft' | 'pending' | 'approved' | 'rejected' | 'changes_requested';
   adminComments?: string;
   rejectionReason?: string;
+  submittedAt?: string;
 }
 
 interface Student {
@@ -248,6 +248,7 @@ const Dashboard: React.FC = () => {
             status: s.status,
             adminComments: s.adminComments,
             rejectionReason: s.rejectionReason,
+            submittedAt: s.submittedAt,
           }));
 
         const otherUsers: Student[] = (users as any[])
@@ -476,11 +477,6 @@ const WelcomeSection: React.FC<{
               <p className="text-white/80 text-sm">{user.department ? `${user.department} • ${user.year} Year` : 'Student'}</p>
             </div>
           </div>
-
-          {/* Theme Toggle */}
-          <div className="flex items-center">
-            <ThemeToggle />
-          </div>
         </div>
 
         {/* Mobile user info below avatar */}
@@ -528,7 +524,7 @@ const ActionButton: React.FC<{ icon: string; label: string; primary?: boolean; o
  */
 const statusConfig = {
   draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300', icon: '🕑' },
-  pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', icon: '🟡' },
+  pending: { label: 'Pending Review', color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400', icon: '⏳' },
   approved: { label: 'Live', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400', icon: '🟢' },
   rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400', icon: '🔴' },
   changes_requested: { label: 'Needs Changes', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400', icon: '🟠' },
@@ -537,49 +533,75 @@ const statusConfig = {
 const YourSkillsSection: React.FC<{ skills: Skill[]; onManage: () => void; onViewDetails?: (skillId: string) => void }> = ({ skills, onManage, onViewDetails }) => (
   <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 p-6">
     <div className="flex items-center justify-between mb-4">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">🎓 Skills You Teach</h2>
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white">🎓 My Teaching Submissions</h2>
       <button onClick={onManage} className="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium">
         Manage →
       </button>
     </div>
 
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-      {skills.map((skill) => (
-        <div
+    <div className="space-y-3">
+      {skills.map((skill) => {
+        const statusInfo = skill.status ? statusConfig[skill.status] : null;
+        const isApproved = skill.status === 'approved';
+        const isRejected = skill.status === 'rejected';
+        const isChanges = skill.status === 'changes_requested';
+        const isPending = skill.status === 'pending';
+
+        return (
+          <div
             key={skill.id}
-            onClick={() => onViewDetails?.(skill.id)}
-            className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/60 dark:to-purple-900/60 rounded-xl p-4 border border-indigo-100 dark:border-indigo-800 hover:shadow-md transition-all duration-200 cursor-pointer hover:scale-[1.02]"
+            className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-600 rounded-xl border border-slate-200 dark:border-slate-500 hover:border-indigo-300 dark:hover:border-indigo-500 transition-all duration-200"
           >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-2xl">{skill.emoji}</span>
-            <div className="flex items-center gap-2">
-              {skill.status && skill.status !== 'approved' && (
-                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusConfig[skill.status]?.color}`}>
-                  {statusConfig[skill.status]?.icon} {statusConfig[skill.status]?.label}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <h3 className="font-semibold text-slate-900 dark:text-white truncate">{skill.title}</h3>
+                {statusInfo && (
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusInfo.color}`}>
+                    {statusInfo.icon} {statusInfo.label}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {skill.category} • {skill.level}
+                {skill.submittedAt && !isApproved && (
+                  <span className="ml-2">• Submitted: {new Date(skill.submittedAt).toLocaleDateString()}</span>
+                )}
+                {isApproved && skill.submittedAt && (
+                  <span className="ml-2">• Approved: {new Date(skill.submittedAt).toLocaleDateString()}</span>
+                )}
+              </p>
+              {(skill.rejectionReason || skill.adminComments) && !isApproved && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1 truncate">
+                  {skill.rejectionReason ? `Reason: ${skill.rejectionReason}` : `Note: ${skill.adminComments}`}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2 ml-4">
+              {isApproved && onViewDetails && (
+                <button
+                  onClick={() => onViewDetails(skill.id)}
+                  className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  View Course
+                </button>
+              )}
+              {(isRejected || isChanges) && onViewDetails && (
+                <button
+                  onClick={() => onViewDetails(skill.id)}
+                  className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+                >
+                  Edit & Resubmit
+                </button>
+              )}
+              {isPending && (
+                <span className="px-3 py-1.5 text-sm text-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 rounded-lg">
+                  ⏳ Waiting for review
                 </span>
               )}
-              <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-medium rounded-full">
-                {skill.level}
-              </span>
             </div>
           </div>
-          <h3 className="font-semibold text-slate-900 dark:text-white mb-1">{skill.title}</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400">{skill.category}</p>
-          {(skill.adminComments || skill.rejectionReason) && skill.status !== 'approved' && (
-            <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/60 border border-amber-200 dark:border-amber-800 rounded-lg">
-              <p className="text-xs text-amber-800 dark:text-amber-300 font-medium">
-                {skill.rejectionReason ? `Rejection: ${skill.rejectionReason}` : `Admin note: ${skill.adminComments}`}
-              </p>
-            </div>
-          )}
-          <div className="flex items-center mt-2 text-xs text-slate-500 dark:text-slate-400">
-            <span className="text-amber-500 mr-1">★</span>
-            <span>{skill.rating}</span>
-            <span className="mx-1">•</span>
-            <span>{skill.learners ?? 0} learners</span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   </div>
 );

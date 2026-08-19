@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import logo from '../assets/logo/skillx-logo.png';
-// theme switch removed
+import ThemeToggle from './ThemeToggle';
 
 /**
  * Navbar Component - Modern & Responsive
@@ -92,6 +92,7 @@ const Navbar: React.FC = () => {
           </div>
 
           <div className="flex items-center space-x-3">
+            <ThemeToggle />
             {/* Mobile Menu Button */}
             <button
               className="md:hidden p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -116,8 +117,9 @@ const Navbar: React.FC = () => {
               <MobileNavLink to="/" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/'}>
                 🏠 Home
               </MobileNavLink>
-              
-              {/* theme toggle removed from mobile menu */}
+              <div className="mx-4 py-2">
+                <ThemeToggle />
+              </div>
               
               {!isAuthPage && !isDashboardPage && (
                 <>

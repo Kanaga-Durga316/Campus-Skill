@@ -32,6 +32,7 @@ export interface IExchangeRequest extends Document<string> {
   quizStatus: string;
   assignmentStatus: string;
   assignmentText?: string;
+  completedExercises: string[];
   liveClassAttended: boolean;
   feedback: { rating: number; comment: string };
   certificate: ICertificate;
@@ -66,6 +67,7 @@ const ExchangeRequestSchema = new Schema<IExchangeRequest>({
   quizStatus: { type: String, enum: ['not_started', 'passed', 'failed'], default: 'not_started' },
   assignmentStatus: { type: String, enum: ['not_started', 'submitted', 'graded'], default: 'not_started' },
   assignmentText: { type: String, default: '' },
+  completedExercises: { type: [String], default: [] },
   liveClassAttended: { type: Boolean, default: false },
   feedback: {
     rating: { type: Number, default: 0, min: 0, max: 5 },

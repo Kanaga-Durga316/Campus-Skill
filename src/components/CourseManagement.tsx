@@ -17,6 +17,14 @@ interface Quiz {
   correctIndex: number;
 }
 
+interface Exercise {
+  _id: string;
+  title: string;
+  description: string;
+  difficulty?: string;
+  expectedOutcome?: string;
+}
+
 interface Module {
   _id: string;
   title: string;
@@ -28,6 +36,7 @@ interface Module {
   liveClassLink?: string;
   assignments: string[];
   quizzes: Quiz[];
+  exercises: Exercise[];
 }
 
 interface Skill {
@@ -112,6 +121,12 @@ const CourseManagement: React.FC = () => {
   const [quizModuleId, setQuizModuleId] = useState('');
   const [editingQuiz, setEditingQuiz] = useState<Quiz | null>(null);
   const [quizForm, setQuizForm] = useState({ question: '', options: ['', ''], correctIndex: 0 });
+
+  // Exercise modal
+  const [showExerciseModal, setShowExerciseModal] = useState(false);
+  const [exerciseModuleId, setExerciseModuleId] = useState('');
+  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null);
+  const [exerciseForm, setExerciseForm] = useState({ title: '', description: '', difficulty: '', expectedOutcome: '' });
 
   // Expanded module ids
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -427,6 +442,59 @@ const CourseManagement: React.FC = () => {
       showMessage('Quiz deleted');
     } catch (err: any) {
       setError(err.message || 'Failed to delete quiz');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ===== Exercise handlers =====
+  const openExerciseModal = (moduleId: string, exercise?: Exercise) => {
+    setExerciseModuleId(moduleId);
+    if (exercise) {
+      setEditingExercise(exercise);
+      setExerciseForm({ title: exercise.title, description: exercise.description, difficulty: exercise.difficulty || '', expectedOutcome: exercise.expectedOutcome || '' });
+    } else {
+      setEditingExercise(null);
+      setExerciseForm({ title: '', description: '', difficulty: '', expectedOutcome: '' });
+    }
+    setShowExerciseModal(true);
+  };
+
+  const saveExercise = async () => {
+    if (!exerciseForm.title.trim()) return;
+    setSaving(true);
+    setError('');
+    try {
+      if (editingExercise) {
+        await fetchJSON(`/skills/${skillId}/modules/${exerciseModuleId}/exercises/${editingExercise._id}`, {
+          method: 'PUT',
+          body: JSON.stringify(exerciseForm)
+        });
+      } else {
+        await fetchJSON(`/skills/${skillId}/modules/${exerciseModuleId}/exercises`, {
+          method: 'POST',
+          body: JSON.stringify(exerciseForm)
+        });
+      }
+      setShowExerciseModal(false);
+      await loadSkill();
+      showMessage(editingExercise ? 'Exercise updated' : 'Exercise added');
+    } catch (err: any) {
+      setError(err.message || 'Failed to save exercise');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteExercise = async (moduleId: string, exerciseId: string) => {
+    setSaving(true);
+    setError('');
+    try {
+      await fetchJSON(`/skills/${skillId}/modules/${moduleId}/exercises/${exerciseId}`, { method: 'DELETE' });
+      await loadSkill();
+      showMessage('Exercise deleted');
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete exercise');
     } finally {
       setSaving(false);
     }
@@ -833,6 +901,33 @@ const CourseManagement: React.FC = () => {
                           {mod.quizzes.length === 0 && <p className="text-sm text-slate-400">No quizzes yet.</p>}
                         </div>
                       </div>
+
+                      {/* Exercises */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-sm font-semibold text-slate-700 dark:text-slate-300">🏋️ Exercises</label>
+                          <button onClick={() => openExerciseModal(mod._id)} disabled={saving} className="px-3 py-1.5 text-sm bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 disabled:opacity-50">+ Add Exercise</button>
+                        </div>
+                        <div className="space-y-2">
+                          {mod.exercises.map((ex) => (
+                            <div key={ex._id} className="p-3 bg-slate-50 dark:bg-slate-700 rounded-xl">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="text-slate-800 dark:text-slate-200 font-medium">{ex.title}</span>
+                                  {ex.difficulty && <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">({ex.difficulty})</span>}
+                                </div>
+                                <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                                  <button onClick={() => openExerciseModal(mod._id, ex)} disabled={saving} className="px-2 py-1 text-xs bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 disabled:opacity-50">Edit</button>
+                                  <button onClick={() => deleteExercise(mod._id, ex._id)} disabled={saving} className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50">Delete</button>
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{ex.description}</p>
+                              {ex.expectedOutcome && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Expected: {ex.expectedOutcome}</p>}
+                            </div>
+                          ))}
+                          {mod.exercises.length === 0 && <p className="text-sm text-slate-400">No exercises yet.</p>}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -939,6 +1034,63 @@ const CourseManagement: React.FC = () => {
             <div className="flex justify-end space-x-2">
               <button onClick={() => setShowQuizModal(false)} className="px-4 py-2 text-slate-600">Cancel</button>
               <button onClick={saveQuiz} disabled={saving} className="px-5 py-2 bg-purple-600 text-white rounded-xl disabled:opacity-50">Save</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Exercise Modal */}
+      {showExerciseModal && (
+        <Modal title={editingExercise ? 'Edit Exercise' : 'Add Exercise'} onClose={() => setShowExerciseModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Title *</label>
+              <input
+                value={exerciseForm.title}
+                onChange={(e) => setExerciseForm({ ...exerciseForm, title: e.target.value })}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none"
+                placeholder="Exercise title"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Description</label>
+              <textarea
+                rows={3}
+                value={exerciseForm.description}
+                onChange={(e) => setExerciseForm({ ...exerciseForm, description: e.target.value })}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none resize-none"
+                placeholder="Describe the exercise..."
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Difficulty</label>
+                <select
+                  value={exerciseForm.difficulty}
+                  onChange={(e) => setExerciseForm({ ...exerciseForm, difficulty: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none bg-white"
+                >
+                  <option value="">Select</option>
+                  <option>Beginner</option>
+                  <option>Intermediate</option>
+                  <option>Advanced</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Expected Outcome</label>
+                <input
+                  value={exerciseForm.expectedOutcome}
+                  onChange={(e) => setExerciseForm({ ...exerciseForm, expectedOutcome: e.target.value })}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 outline-none"
+                  placeholder="What should students achieve?"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button onClick={() => setShowExerciseModal(false)} className="px-4 py-2 text-slate-600">Cancel</button>
+              <button onClick={saveExercise} disabled={saving} className="px-5 py-2 bg-emerald-600 text-white rounded-xl disabled:opacity-50">
+                {editingExercise ? 'Update' : 'Add'}
+              </button>
             </div>
           </div>
         </Modal>

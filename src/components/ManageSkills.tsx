@@ -744,12 +744,12 @@ const SkillCard: React.FC<{
       )}
 
       {/* Submit / Resubmit Button */}
-      {isTeaching && skill.status && (skill.status === 'draft' || skill.status === 'changes_requested') && onSubmit && (
+      {isTeaching && skill.status && (skill.status === 'draft' || skill.status === 'changes_requested' || skill.status === 'rejected') && onSubmit && (
         <button
           onClick={(e) => { e.stopPropagation(); onSubmit(); }}
           className="mt-2 w-full py-2 bg-amber-600 text-white text-sm font-medium rounded-xl hover:bg-amber-700"
         >
-          {skill.status === 'changes_requested' ? '🔄 Resubmit for Approval' : '📤 Submit for Approval'}
+          {skill.status === 'changes_requested' ? '🔄 Resubmit for Approval' : skill.status === 'rejected' ? '🔄 Resubmit for Approval' : '📤 Submit for Approval'}
         </button>
       )}
       {isTeaching && skill.status === 'pending' && (

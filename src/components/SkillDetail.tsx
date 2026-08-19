@@ -3,6 +3,23 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from './Navbar';
 import { fetchJSON } from '../api';
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user');
+    return u ? JSON.parse(u) : null;
+  } catch {
+    return null;
+  }
+};
+
+const statusConfig = {
+  draft: { label: 'Draft', color: 'bg-slate-100 text-slate-700' },
+  pending: { label: 'Pending Review', color: 'bg-yellow-100 text-yellow-700' },
+  approved: { label: 'Live', color: 'bg-green-100 text-green-700' },
+  rejected: { label: 'Rejected', color: 'bg-red-100 text-red-700' },
+  changes_requested: { label: 'Needs Changes', color: 'bg-orange-100 text-orange-700' },
+};
+
 /**
  * SkillDetail Component
  * Displays course content, lessons, and materials for a specific skill
@@ -32,6 +49,11 @@ interface SkillDetail {
   learners: number;
   totalDuration: string;
   lessons: Lesson[];
+  status?: string;
+  rejectionReason?: string;
+  adminComments?: string;
+  owner?: { _id: string; name: string };
+  submittedAt?: string;
   // Learning resources
   courseDescription?: string;
   notes?: string;
@@ -132,6 +154,11 @@ const SkillDetail: React.FC = () => {
           learners: s.learners || 0,
           totalDuration: s.duration || '—',
           lessons: [],
+          status: s.status,
+          rejectionReason: s.rejectionReason,
+          adminComments: s.adminComments,
+          owner: s.owner,
+          submittedAt: s.submittedAt,
           courseDescription: s.courseDescription || '',
           notes: s.notes || '',
           notesFile: s.notesFile || '',
@@ -173,12 +200,34 @@ const SkillDetail: React.FC = () => {
   const completedLessons = skill.lessons.filter(l => l.completed).length;
   const progress = Math.round((completedLessons / skill.lessons.length) * 100);
 
-  const getLessonIcon = (type: string) => {
+   const getLessonIcon = (type: string) => {
     switch (type) {
       case 'video': return '🎬';
       case 'article': return '📄';
       case 'quiz': return '✅';
       default: return '📚';
+    }
+  };
+
+  const storedUser = getStoredUser();
+  const isOwner = storedUser && skill.owner && storedUser._id === skill.owner._id;
+  const statusInfo = skill.status ? statusConfig[skill.status as keyof typeof statusConfig] : null;
+
+  const handleResubmit = async () => {
+    if (!skillId) return;
+    try {
+      await fetchJSON(`/skills/${skillId}/submit`, { method: 'POST' });
+      alert('Your course has been resubmitted for approval.');
+      // Refresh the page data
+      const updated = await fetchJSON(`/skills/${skillId}`);
+      setSkill({
+        ...skill,
+        status: updated.status,
+        rejectionReason: updated.rejectionReason,
+        adminComments: updated.adminComments,
+      });
+    } catch (err: any) {
+      alert(err.message || 'Failed to resubmit');
     }
   };
 
@@ -221,6 +270,49 @@ const SkillDetail: React.FC = () => {
               </div>
               
               <p className="mt-4 text-slate-600 dark:text-slate-300">{skill.description}</p>
+              
+              {/* Status Banner for Owner */}
+              {isOwner && statusInfo && (
+                <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-600">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
+                        {statusInfo.label}
+                      </span>
+                      {skill.submittedAt && (
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          {skill.status === 'approved' ? 'Approved' : 'Submitted'}: {new Date(skill.submittedAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      {(skill.status === 'rejected' || skill.status === 'changes_requested') && (
+                        <button
+                          onClick={handleResubmit}
+                          className="px-4 py-2 bg-amber-600 text-white text-sm font-medium rounded-xl hover:bg-amber-700 transition-colors"
+                        >
+                          🔄 Edit & Resubmit
+                        </button>
+                      )}
+                      {skill.status === 'pending' && (
+                        <span className="px-4 py-2 text-sm text-yellow-700 bg-yellow-50 dark:bg-yellow-900/30 rounded-xl">
+                          ⏳ Waiting for admin review
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {(skill.rejectionReason || skill.adminComments) && skill.status !== 'approved' && (
+                    <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      {skill.rejectionReason && (
+                        <p className="text-sm text-red-800 dark:text-red-300 font-medium">Rejection: {skill.rejectionReason}</p>
+                      )}
+                      {skill.adminComments && (
+                        <p className="text-sm text-orange-800 dark:text-orange-300 font-medium mt-1">Admin note: {skill.adminComments}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
               
               {/* Progress Bar */}
               <div className="mt-6">

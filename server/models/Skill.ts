@@ -14,6 +14,22 @@ const QuizSchema = new Schema<IQuiz>({
   correctIndex: { type: Number, required: true, min: 0 },
 });
 
+export interface IExercise extends Document<string> {
+  _id: string;
+  title: string;
+  description: string;
+  difficulty?: string;
+  expectedOutcome?: string;
+}
+
+const ExerciseSchema = new Schema<IExercise>({
+  _id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
+  title: { type: String, required: true, trim: true },
+  description: { type: String, default: '' },
+  difficulty: { type: String, default: '' },
+  expectedOutcome: { type: String, default: '' },
+});
+
 export interface IModule extends Document<string> {
   _id: string;
   title: string;
@@ -25,6 +41,7 @@ export interface IModule extends Document<string> {
   liveClassLink?: string;
   assignments: string[];
   quizzes: IQuiz[];
+  exercises: IExercise[];
 }
 
 const ModuleSchema = new Schema<IModule>({
@@ -38,6 +55,7 @@ const ModuleSchema = new Schema<IModule>({
   liveClassLink: { type: String, default: '' },
   assignments: { type: [String], default: [] },
   quizzes: { type: [QuizSchema], default: [] },
+  exercises: { type: [ExerciseSchema], default: [] },
 });
 
 export interface ISkill extends Document<string> {
