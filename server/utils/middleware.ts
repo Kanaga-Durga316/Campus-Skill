@@ -136,6 +136,20 @@ export function isValidObjectId(id: string): boolean {
 // ===== Centralized Error Handler Middleware =====
 
 export function errorHandler(err: any, _req: Request, res: Response, _next: NextFunction) {
+  console.error('ERROR HANDLER:', JSON.stringify({ code: err?.code, message: err?.message, name: err?.name, type: typeof err }));
+
+  // Multer file upload errors
+  if (err && typeof err === 'object' && err.code && String(err.code).startsWith('LIMIT_')) {
+    const code = String(err.code);
+    if (code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'File size exceeds the maximum allowed limit (5MB)' });
+    }
+    if (code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'Unexpected file field. Use "csvFile" as the field name.' });
+    }
+    return res.status(400).json({ error: `File upload error: ${err.message}` });
+  }
+
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
     return res.status(400).json({

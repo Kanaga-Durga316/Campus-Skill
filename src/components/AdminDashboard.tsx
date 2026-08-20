@@ -348,6 +348,23 @@ const AdminDashboard: React.FC = () => {
             </div>
           )}
 
+          {/* Quick Import Card */}
+          <div className="mb-8">
+            <button
+              onClick={() => navigate('/admin/import')}
+              className="w-full px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 border border-indigo-500/50 rounded-2xl text-left hover:from-indigo-500 hover:to-purple-500 transition-all duration-300 flex items-center justify-between group"
+            >
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📥</span>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">CSV Import</h3>
+                  <p className="text-sm text-indigo-100">Bulk import students, skills, and courses</p>
+                </div>
+              </div>
+              <span className="text-indigo-200 group-hover:translate-x-1 transition-transform duration-300">→</span>
+            </button>
+          </div>
+
           {/* CSV Import Section */}
           <div className="mb-8">
             <button

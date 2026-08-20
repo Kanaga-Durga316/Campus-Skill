@@ -20,8 +20,15 @@ import CourseManagement from './components/CourseManagement';
 import StudentCourse from './components/StudentCourse';
 import StudentProfile from './components/StudentProfile';
 import StudentsList from './components/StudentsList';
-import AdminDashboard from './components/AdminDashboard';
+import AdminDashboardOverview from './components/AdminDashboardOverview';
 import AdminLoginPage from './components/AdminLogin';
+import AdminImport from './components/AdminImport';
+import AdminUsers from './components/AdminUsers';
+import AdminSkills from './components/AdminSkills';
+import AdminCourses from './components/AdminCourses';
+import AdminRequests from './components/AdminRequests';
+import AdminImportHistory from './components/AdminImportHistory';
+import AdminAnalytics from './components/AdminAnalytics';
 import Profile from './components/Profile';
 import Chat from './components/Chat';
 import Announcements from './components/Announcements';
@@ -92,9 +99,25 @@ const App: React.FC = () => {
             {/* Students List page route */}
             <Route path="/students" element={<StudentsList />} />
             {/* Admin Dashboard route */}
-            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin" element={<AdminDashboardOverview />} />
+            {/* Admin Dashboard route */}
+            <Route path="/admin/dashboard" element={<AdminDashboardOverview />} />
             {/* Admin Login route */}
             <Route path="/admin/login" element={<AdminLoginPage />} />
+            {/* Admin Import route */}
+            <Route path="/admin/import" element={<AdminImport />} />
+            {/* Admin Users route */}
+            <Route path="/admin/users" element={<AdminUsers />} />
+            {/* Admin Skills route */}
+            <Route path="/admin/skills" element={<AdminSkills />} />
+            {/* Admin Courses route */}
+            <Route path="/admin/courses" element={<AdminCourses />} />
+            {/* Admin Requests route */}
+            <Route path="/admin/requests" element={<AdminRequests />} />
+            {/* Admin Import History route */}
+            <Route path="/admin/import-history" element={<AdminImportHistory />} />
+            {/* Admin Analytics route */}
+            <Route path="/admin/analytics" element={<AdminAnalytics />} />
             {/* Chat route */}
             <Route path="/chat" element={<Chat />} />
             {/* Announcements route */}

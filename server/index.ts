@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { generateToken, hashPassword, comparePassword, verifyToken } from './utils/auth.js';
@@ -22,7 +23,7 @@ import {
 import { uploadNotes, uploadSharedFile, uploadCsv } from './utils/upload.js';
 import { computeProgress, gradeQuiz, generateCertificateId, PASS_THRESHOLD } from './utils/progress.js';
 import { connectDatabase } from '../config/db.js';
-import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review, ChatRoom, Announcement, Meeting, Poll, DiscussionPost, DiscussionReply, SharedFile, StudyGroup, Attendance } from './models/index.js';
+import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review, ChatRoom, Announcement, Meeting, Poll, DiscussionPost, DiscussionReply, SharedFile, StudyGroup, Attendance, CSVImportHistory } from './models/index.js';
 import { importCsv } from './utils/csvImport.js';
 
 dotenv.config();
@@ -1329,15 +1330,388 @@ app.post(
     }
 
     if (!file.originalname.toLowerCase().endsWith('.csv')) {
+      fs.unlink(file.path, () => {});
       throw new AppError('Only CSV files are allowed', 400);
     }
 
     if (file.size > 5 * 1024 * 1024) {
+      fs.unlink(file.path, () => {});
       throw new AppError('CSV file size must be under 5MB', 400);
     }
 
-    const summary = await importCsv(file.buffer);
-    res.status(200).json(summary);
+    try {
+      const buffer = fs.readFileSync(file.path);
+      const summary = await importCsv(buffer);
+
+      const status = summary.errors.length === 0 ? 'SUCCESS' : summary.usersCreated > 0 || summary.skillsCreated > 0 || summary.coursesCreated > 0 ? 'PARTIAL' : 'FAILED';
+
+      await CSVImportHistory.create({
+        adminId: req.userId,
+        adminName: (req as any).user?.name || 'Admin',
+        fileName: file.originalname,
+        totalRows: summary.totalRecords,
+        usersCreated: summary.usersCreated,
+        usersSkipped: summary.usersSkipped,
+        skillsCreated: summary.skillsCreated,
+        coursesCreated: summary.coursesCreated,
+        errorCount: summary.errors.length,
+        status,
+        errors: summary.errors.slice(0, 50),
+      });
+
+      res.status(200).json(summary);
+    } finally {
+      fs.unlink(file.path, () => {});
+    }
+  })
+);
+
+// ===== ADMIN DASHBOARD STATS =====
+
+app.get(
+  '/api/admin/dashboard/stats',
+  adminMiddleware,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [
+      totalUsers,
+      totalSkills,
+      totalCourses,
+      pendingRequests,
+      acceptedRequests,
+      completedExchanges,
+      totalMessages,
+      pendingApprovals,
+      approvedSkills,
+      rejectedSkills,
+    ] = await Promise.all([
+      User.countDocuments({}),
+      Skill.countDocuments({}),
+      Skill.countDocuments({ status: 'approved' }),
+      ExchangeRequest.countDocuments({ status: 'pending' }),
+      ExchangeRequest.countDocuments({ status: 'accepted' }),
+      ExchangeRequest.countDocuments({ status: 'completed' }),
+      Message.countDocuments({}),
+      Skill.countDocuments({ status: 'pending' }),
+      Skill.countDocuments({ status: 'approved' }),
+      Skill.countDocuments({ status: 'rejected' }),
+    ]);
+
+    res.json({
+      totalUsers,
+      totalSkills,
+      totalCourses,
+      pendingRequests,
+      acceptedRequests,
+      completedExchanges,
+      totalMessages,
+      pendingApprovals,
+      approvedSkills,
+      rejectedSkills,
+    });
+  })
+);
+
+// ===== ADMIN USER MANAGEMENT =====
+
+app.get(
+  '/api/admin/users',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { search, role, department, status, page = '1', limit = '20' } = req.query;
+    const query: any = {};
+
+    if (search) {
+      const q = String(search);
+      if (q.trim()) {
+        query.$or = [
+          { name: { $regex: q, $options: 'i' } },
+          { email: { $regex: q, $options: 'i' } },
+        ];
+      }
+    }
+    if (role) query.role = String(role);
+    if (department) query.department = String(department);
+    if (status === 'active') query.isActive = true;
+    if (status === 'disabled') query.isActive = false;
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Math.min(100, Number(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [data, total] = await Promise.all([
+      User.find(query)
+        .select('-password')
+        .skip(skip)
+        .limit(limitNum)
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+      User.countDocuments(query),
+    ]);
+
+    res.json({
+      data,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  })
+);
+
+app.get(
+  '/api/admin/users/:id',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+    const user = await User.findById(id).select('-password').lean().exec();
+    if (!user) throw new NotFoundError('User');
+    res.json(user);
+  })
+);
+
+app.put(
+  '/api/admin/users/:id',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+
+    const allowed = ['name', 'email', 'department', 'year', 'role', 'college', 'university', 'semester', 'studentId'];
+    const updates: any = {};
+    for (const key of allowed) {
+      if (key in req.body) {
+        updates[key] = req.body[key];
+      }
+    }
+
+    if (updates.email) {
+      updates.email = String(updates.email).toLowerCase().trim();
+    }
+
+    const updated = await User.findByIdAndUpdate(id, updates, { new: true }).select('-password').lean().exec();
+    if (!updated) throw new NotFoundError('User');
+    res.json(updated);
+  })
+);
+
+app.patch(
+  '/api/admin/users/:id/status',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+
+    const { isActive } = req.body;
+    if (typeof isActive !== 'boolean') {
+      throw new AppError('isActive boolean is required', 400);
+    }
+
+    const updated = await User.findByIdAndUpdate(id, { isActive }, { new: true }).select('-password').lean().exec();
+    if (!updated) throw new NotFoundError('User');
+    res.json(updated);
+  })
+);
+
+app.delete(
+  '/api/admin/users/:id',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid user ID format', 400);
+    }
+    if (id === req.userId) {
+      throw new AppError('You cannot delete your own account', 400);
+    }
+    await User.findByIdAndDelete(id).exec();
+    res.json({ success: true });
+  })
+);
+
+// ===== ADMIN SKILL MANAGEMENT =====
+
+app.delete(
+  '/api/admin/skills/:id',
+  adminMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid skill ID format', 400);
+    }
+
+    const skill = await Skill.findById(id).lean().exec();
+    if (!skill) throw new NotFoundError('Skill');
+
+    await ExchangeRequest.updateMany({ 'skillRequested._id': id }, { $set: { 'skillRequested.title': 'Deleted Skill' } }).exec();
+    await Skill.findByIdAndDelete(id).exec();
+
+    res.json({ success: true });
+  })
+);
+
+// ===== ADMIN REQUEST MANAGEMENT =====
+
+app.get(
+  '/api/admin/requests',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { status, search, page = '1', limit = '20' } = req.query;
+    const query: any = {};
+
+    if (status) query.status = String(status);
+    if (search) {
+      const q = String(search);
+      if (q.trim()) {
+        query.$or = [
+          { 'requester.name': { $regex: q, $options: 'i' } },
+          { 'responder.name': { $regex: q, $options: 'i' } },
+          { 'skillRequested.title': { $regex: q, $options: 'i' } },
+        ];
+      }
+    }
+
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Math.min(100, Number(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [data, total] = await Promise.all([
+      ExchangeRequest.find(query)
+        .populate('requester', 'name email department')
+        .populate('responder', 'name email department')
+        .skip(skip)
+        .limit(limitNum)
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+      ExchangeRequest.countDocuments(query),
+    ]);
+
+    res.json({
+      data,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  })
+);
+
+app.get(
+  '/api/admin/requests/:id',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid request ID format', 400);
+    }
+    const request = await ExchangeRequest.findById(id)
+      .populate('requester', 'name email department year college')
+      .populate('responder', 'name email department year college')
+      .lean()
+      .exec();
+    if (!request) throw new NotFoundError('Request');
+    res.json(request);
+  })
+);
+
+// ===== ADMIN IMPORT HISTORY =====
+
+app.get(
+  '/api/admin/import-history',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { page = '1', limit = '20' } = req.query;
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Math.min(100, Number(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [data, total] = await Promise.all([
+      CSVImportHistory.find()
+        .skip(skip)
+        .limit(limitNum)
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+      CSVImportHistory.countDocuments(),
+    ]);
+
+    res.json({
+      data,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
+  })
+);
+
+app.get(
+  '/api/admin/import-history/:id',
+  adminMiddleware,
+  asyncHandler(async (req: Request, res: Response) => {
+    const id = paramId(req);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new AppError('Invalid import history ID format', 400);
+    }
+    const record = await CSVImportHistory.findById(id).lean().exec();
+    if (!record) throw new NotFoundError('Import history');
+    res.json(record);
+  })
+);
+
+// ===== ADMIN ANALYTICS =====
+
+app.get(
+  '/api/admin/analytics',
+  adminMiddleware,
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [userGrowth, skillDistribution, requestStatusDistribution, departmentDistribution] = await Promise.all([
+      User.aggregate([
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]).exec(),
+      Skill.aggregate([
+        { $match: { status: 'approved' } },
+        { $group: { _id: '$category', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]).exec(),
+      ExchangeRequest.aggregate([
+        { $group: { _id: '$status', count: { $sum: 1 } } },
+      ]).exec(),
+      User.aggregate([
+        { $match: { department: { $nin: ['', null] } } },
+        { $group: { _id: '$department', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 10 },
+      ]).exec(),
+    ]);
+
+    res.json({
+      userGrowth,
+      skillDistribution,
+      requestStatusDistribution,
+      departmentDistribution,
+    });
   })
 );
 

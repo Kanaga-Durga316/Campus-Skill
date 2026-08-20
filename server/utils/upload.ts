@@ -42,6 +42,15 @@ const upload = multer({
 export const uploadNotes = upload.single('notesFile');
 export const uploadSharedFile = upload.single('file');
 
+const csvStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, 'uploads/'),
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `csv-${unique}${ext}`);
+  },
+});
+
 const csvFilter = (_req: any, file: any, cb: any) => {
   if (
     file.mimetype === 'text/csv' ||
@@ -56,7 +65,7 @@ const csvFilter = (_req: any, file: any, cb: any) => {
 };
 
 export const uploadCsv = multer({
-  storage: multer.memoryStorage(),
+  storage: csvStorage,
   fileFilter: csvFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
 });

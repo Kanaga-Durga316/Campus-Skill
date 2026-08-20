@@ -133,6 +133,7 @@ const UserSchema = new Schema<IUser>({
     showCertificates: { type: Boolean, default: true },
     showAchievements: { type: Boolean, default: true },
   },
+  isActive: { type: Boolean, default: true },
   bookmarks: { type: [String], default: [] },
   calendarEvents: { type: [Schema.Types.Mixed], default: [] },
   teachingAnalytics: {

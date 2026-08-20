@@ -14,3 +14,4 @@ export { DiscussionReply } from './DiscussionReply.js';
 export { SharedFile } from './SharedFile.js';
 export { StudyGroup } from './StudyGroup.js';
 export { Attendance } from './Attendance.js';
+export { CSVImportHistory } from './CSVImportHistory.js';
