@@ -29,6 +29,8 @@ import AdminCourses from './components/AdminCourses';
 import AdminRequests from './components/AdminRequests';
 import AdminImportHistory from './components/AdminImportHistory';
 import AdminAnalytics from './components/AdminAnalytics';
+import Courses from './components/Courses';
+import MyLearning from './components/MyLearning';
 import Profile from './components/Profile';
 import Chat from './components/Chat';
 import Announcements from './components/Announcements';
@@ -80,6 +82,10 @@ const App: React.FC = () => {
             <Route path="/manage-skills" element={<ManageSkills />} />
             {/* Skill Search page route */}
             <Route path="/search" element={<SkillSearch />} />
+            {/* Courses page route */}
+            <Route path="/courses" element={<Courses />} />
+            {/* My Learning page route */}
+            <Route path="/my-learning" element={<MyLearning />} />
             {/* Requests page route */}
             <Route path="/requests" element={<Requests />} />
             {/* Skill Detail page route */}

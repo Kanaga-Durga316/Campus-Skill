@@ -167,6 +167,7 @@ const Dashboard: React.FC = () => {
   const [myLearning, setMyLearning] = useState<MyLearningItem[]>([]);
   const [teachingRequests, setTeachingRequests] = useState<TeacherStudentItem[]>([]);
   const [learnSkillRequestMap, setLearnSkillRequestMap] = useState<Record<string, string>>({});
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const reloadTeaching = async () => {
     try {
@@ -221,14 +222,15 @@ const Dashboard: React.FC = () => {
       }
 
       try {
-        const [mySkillsData, users, requests, enrollments, teacherRequests, currentProfile, learnSkillsRaw] = await Promise.all([
+        const [mySkillsData, users, requests, enrollments, teacherRequests, currentProfile, learnSkillsRaw, unreadData] = await Promise.all([
           fetchJSON('/skills/mine').catch(() => []),
           fetchJSON('/users'),
           fetchJSON('/requests'),
           fetchJSON('/requests/enrollments').catch(() => []),
           fetchJSON('/requests/teacher').catch(() => []),
           storedUser._id ? fetchJSON(`/users/${storedUser._id}`).catch(() => null) : Promise.resolve(null),
-          fetchJSON('/learn-skills').catch(() => [])
+          fetchJSON('/learn-skills').catch(() => []),
+          fetchJSON('/messages/unread/count').catch(() => ({ count: 0 })),
         ]);
 
         if (!mounted) return;
@@ -328,6 +330,7 @@ const Dashboard: React.FC = () => {
         );
         setSuggestedStudents(otherUsers);
         setRecentRequests(myRequests);
+        setUnreadMessages((unreadData as any)?.count || 0);
 
         const avgRating = mySkillsList.length > 0
           ? (mySkillsList.reduce((sum, s) => sum + (s.rating || 0), 0) / mySkillsList.length).toFixed(1)
@@ -396,9 +399,11 @@ const Dashboard: React.FC = () => {
               ======================================== */}
           <WelcomeSection
             user={currentUser}
+            unreadMessages={unreadMessages}
             onAddSkill={() => navigate('/manage-skills')}
             onBrowse={() => navigate('/search')}
             onRequests={() => navigate('/requests')}
+            onMessages={() => navigate('/messages')}
             onSettings={() => navigate('/settings')}
           />
 
@@ -456,11 +461,13 @@ const Dashboard: React.FC = () => {
  */
 const WelcomeSection: React.FC<{
   user: CurrentUser;
+  unreadMessages: number;
   onAddSkill: () => void;
   onBrowse: () => void;
   onRequests: () => void;
+  onMessages: () => void;
   onSettings: () => void;
-}> = ({ user, onAddSkill, onBrowse, onRequests, onSettings }) => {
+}> = ({ user, unreadMessages, onAddSkill, onBrowse, onRequests, onMessages, onSettings }) => {
 
   return (
     <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -491,8 +498,9 @@ const WelcomeSection: React.FC<{
         <div className="flex flex-wrap gap-2">
           <ActionButton icon="➕" label="Add Skill" primary onClick={onAddSkill} />
           <ActionButton icon="🔍" label="Browse" onClick={onBrowse} />
-          <ActionButton icon="📬" label="Requests" onClick={onRequests} />
-          <ActionButton icon="⚙️" label="Settings" onClick={onSettings} />
+           <ActionButton icon="📬" label="Requests" onClick={onRequests} />
+           <ActionButton icon="💬" label="Messages" onClick={onMessages} badge={unreadMessages} />
+           <ActionButton icon="⚙️" label="Settings" onClick={onSettings} />
         </div>
       </div>
     </div>
@@ -502,8 +510,8 @@ const WelcomeSection: React.FC<{
 /**
  * ActionButton Component
  */
-const ActionButton: React.FC<{ icon: string; label: string; primary?: boolean; onClick?: () => void }> = ({
-  icon, label, primary, onClick
+const ActionButton: React.FC<{ icon: string; label: string; primary?: boolean; onClick?: () => void; badge?: number }> = ({
+  icon, label, primary, onClick, badge
 }) => (
   <button
     onClick={onClick}
@@ -515,6 +523,11 @@ const ActionButton: React.FC<{ icon: string; label: string; primary?: boolean; o
   >
     <span>{icon}</span>
     <span>{label}</span>
+    {badge !== undefined && badge > 0 && (
+      <span className="ml-1.5 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+        {badge > 9 ? '9+' : badge}
+      </span>
+    )}
   </button>
 );
 

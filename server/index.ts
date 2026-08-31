@@ -25,6 +25,9 @@ import { computeProgress, gradeQuiz, generateCertificateId, PASS_THRESHOLD } fro
 import { connectDatabase } from '../config/db.js';
 import { User, Skill, LearnSkill, ExchangeRequest, Message, Notification, Review, ChatRoom, Announcement, Meeting, Poll, DiscussionPost, DiscussionReply, SharedFile, StudyGroup, Attendance, CSVImportHistory } from './models/index.js';
 import { importCsv } from './utils/csvImport.js';
+import { Server as SocketIOServer } from 'socket.io';
+import { createServer } from 'http';
+import { verifyToken } from './utils/auth.js';
 
 dotenv.config();
 
@@ -613,7 +616,7 @@ app.get(
 app.get(
   '/api/skills',
   asyncHandler(async (req: Request, res: Response) => {
-    const { search, status } = req.query;
+    const { search, status, category, level } = req.query;
     const query: any = {};
 
     if (search) {
@@ -625,6 +628,14 @@ app.get(
           { tags: { $in: [new RegExp(q, 'i')] } },
         ];
       }
+    }
+
+    if (category && String(category).trim().length > 0) {
+      query.category = String(category).trim();
+    }
+
+    if (level && String(level).trim().length > 0) {
+      query.level = String(level).trim();
     }
 
     // Public search only shows approved courses
@@ -1806,6 +1817,140 @@ app.delete(
   })
 );
 
+// ===== SMART MATCHING ROUTES =====
+
+app.get(
+  '/api/matching',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const currentUserId = req.userId;
+    if (!currentUserId) {
+      throw new AppError('Authentication required', 401);
+    }
+
+    const [myLearnSkills, allTeachSkills, allUsers] = await Promise.all([
+      LearnSkill.find({ 'owner._id': currentUserId }).lean().exec(),
+      Skill.find({ status: 'approved' }).lean().exec(),
+      User.find().lean().exec(),
+    ]);
+
+    if (myLearnSkills.length === 0) {
+      return res.json([]);
+    }
+
+    const userMap = new Map(allUsers.map(u => [u._id, u]));
+
+    const learnTitles = myLearnSkills.map(s => s.title.toLowerCase().trim());
+    const learnCategories = myLearnSkills.map(s => (s.category || '').toLowerCase().trim());
+    const learnLevels = myLearnSkills.map(s => (s.level || '').toLowerCase().trim());
+
+    const candidates = new Map<string, {
+      user: any;
+      score: number;
+      matchedTeachSkill: any;
+      matchedLearnSkill: any;
+      commonInterests: string[];
+    }>();
+
+    for (const teach of allTeachSkills) {
+      const ownerId = teach.owner?._id || teach.owner;
+      if (!ownerId || ownerId === currentUserId) continue;
+
+      const owner = userMap.get(ownerId);
+      if (!owner) continue;
+
+      for (const learn of myLearnSkills) {
+        const lt = learn.title.toLowerCase().trim();
+        const st = teach.title.toLowerCase().trim();
+
+        let rawScore = 0;
+        const commonInterests: string[] = [];
+
+        if (lt === st) {
+          rawScore += 40;
+          commonInterests.push(learn.title);
+        } else if (lt.includes(st) || st.includes(lt)) {
+          rawScore += 25;
+          commonInterests.push(learn.title);
+        }
+
+        const lc = (learn.category || '').toLowerCase().trim();
+        const sc = (teach.category || '').toLowerCase().trim();
+        if (lc && sc && lc === sc) {
+          rawScore += 15;
+          commonInterests.push(teach.category);
+        }
+
+        const ll = (learn.level || '').toLowerCase().trim();
+        const sl = (teach.level || '').toLowerCase().trim();
+        if (ll && sl && ll === sl) {
+          rawScore += 10;
+          commonInterests.push(teach.level);
+        }
+
+        const ud = (owner.department || '').toLowerCase().trim();
+        const myDept = (userMap.get(currentUserId)?.department || '').toLowerCase().trim();
+        if (ud && myDept && ud === myDept) {
+          rawScore += 5;
+        }
+
+        const uy = String(owner.year || '').trim();
+        const myYear = String(userMap.get(currentUserId)?.year || '').trim();
+        if (uy && myYear && uy === myYear) {
+          rawScore += 5;
+        }
+
+        const rating = typeof teach.rating === 'number' ? teach.rating : 0;
+        rawScore += Math.min(rating, 5);
+
+        const score = Math.min(Math.round(rawScore), 100);
+
+        const existing = candidates.get(ownerId);
+        if (!existing || score > existing.score) {
+          candidates.set(ownerId, {
+            user: {
+              _id: owner._id,
+              name: owner.name,
+              email: owner.email,
+              department: owner.department,
+              year: owner.year,
+              bio: owner.bio,
+              avatarUrl: owner.avatarUrl,
+              location: owner.location,
+              preferredMode: owner.preferredMode,
+              experienceLevel: owner.experienceLevel,
+              rating,
+            },
+            score,
+            matchedTeachSkill: {
+              _id: teach._id,
+              title: teach.title,
+              category: teach.category,
+              level: teach.level,
+              rating,
+              description: teach.description,
+              tags: teach.tags,
+            },
+            matchedLearnSkill: {
+              _id: learn._id,
+              title: learn.title,
+              category: learn.category,
+              level: learn.level,
+            },
+            commonInterests: Array.from(new Set(commonInterests)),
+          });
+        }
+      }
+    }
+
+    const results = Array.from(candidates.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 50);
+
+    res.json(results);
+  })
+);
+
 // ===== EXCHANGE REQUEST ROUTES =====
 
 app.get(
@@ -1836,6 +1981,38 @@ app.get(
       .lean()
       .exec();
     res.json(result);
+  })
+);
+
+app.get(
+  '/api/my-learning',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const [enrollments, inProgress] = await Promise.all([
+      ExchangeRequest.find({ 'requester._id': req.userId, status: { $in: ['accepted', 'completed'] } })
+        .sort({ updatedAt: -1 })
+        .lean()
+        .exec(),
+      ExchangeRequest.find({ 'requester._id': req.userId, status: 'accepted', progress: { $gt: 0, $lt: 100 } })
+        .sort({ updatedAt: -1 })
+        .lean()
+        .exec(),
+    ]);
+
+    const completed = enrollments.filter((e: any) => e.status === 'completed');
+    const recentlyAccessed = enrollments.slice(0, 5);
+
+    res.json({
+      enrollments,
+      inProgress,
+      completed,
+      recentlyAccessed,
+      stats: {
+        total: enrollments.length,
+        inProgress: inProgress.length,
+        completed: completed.length,
+      },
+    });
   })
 );
 
@@ -1879,6 +2056,7 @@ app.post(
 
     if (!responderId) throw new AppError('Responder ID is required', 400);
     if (!skillRequestedId) throw new AppError('Skill requested ID is required', 400);
+    if (responderId === req.userId) throw new AppError('Cannot send a request to yourself', 400);
 
     const [responder, requester, skillRequested] = await Promise.all([
       User.findById(responderId).lean().exec(),
@@ -1888,6 +2066,17 @@ app.post(
 
     if (!responder) throw new NotFoundError('Responder user');
     if (!requester) throw new NotFoundError('Requester user');
+
+    const existing = await ExchangeRequest.findOne({
+      'requester._id': req.userId,
+      'responder._id': responderId,
+      'skillRequested._id': skillRequestedId,
+      status: { $in: ['pending', 'accepted', 'in_progress'] },
+    }).lean().exec();
+
+    if (existing) {
+      throw new AppError('You already have an active request for this skill with this student', 409);
+    }
 
     const skillOffered = skillOfferedId ? await LearnSkill.findById(skillOfferedId).lean().exec() : null;
 
@@ -1910,7 +2099,7 @@ app.post(
       skillOffered: skillOffered
         ? { _id: skillOffered._id, title: skillOffered.title }
         : { _id: skillOfferedId || '', title: '—' },
-      status: 'open',
+      status: 'pending',
       message: message || '',
       scheduledAt: '',
       progress: 0,
@@ -1962,13 +2151,20 @@ app.put(
     const update: any = {};
 
     if (status !== undefined) {
-      if ((status === 'accepted' || status === 'rejected') && !isResponder) {
-        throw new ForbiddenError('Only the teacher can accept or reject');
+      if ((status === 'accepted' || status === 'rejected' || status === 'in_progress') && !isResponder) {
+        throw new ForbiddenError('Only the teacher can accept, reject, or mark in progress');
       }
       if (status === 'cancelled' && !isRequester) {
         throw new ForbiddenError('Only the student can cancel');
       }
-      if (!['open', 'pending', 'accepted', 'rejected', 'cancelled', 'completed'].includes(status)) {
+      if (status === 'completed' && !isRequester && !isResponder) {
+        throw new ForbiddenError('Only parties to this exchange can mark it completed');
+      }
+      const terminal = ['rejected', 'cancelled', 'completed'];
+      if (terminal.includes(request.status) && status !== request.status) {
+        throw new AppError('Cannot change status of a terminal request', 400);
+      }
+      if (!['open', 'pending', 'accepted', 'in_progress', 'rejected', 'cancelled', 'completed'].includes(status)) {
         throw new AppError('Invalid status value', 400);
       }
       update.status = status;
@@ -2042,7 +2238,7 @@ app.put(
       };
     }
 
-    // Auto-notify requester if request was accepted or rejected
+    // Auto-notify requester if request was accepted, rejected, completed, or cancelled
     if (update.status === 'accepted') {
       await Notification.create({
         _id: nid(),
@@ -2058,6 +2254,26 @@ app.put(
         userId: request.requester._id,
         type: 'request_rejected',
         message: `${request.responder.name} declined your exchange request for ${request.skillRequested?.title || 'a skill'}.`,
+        read: false,
+        link: '/requests',
+      });
+    } else if (update.status === 'completed') {
+      const otherId = isRequester ? request.responder._id : request.requester._id;
+      await Notification.create({
+        _id: nid(),
+        userId: otherId,
+        type: 'request_completed',
+        message: `Exchange request for "${request.skillRequested?.title || 'a skill'}" has been marked as completed.`,
+        read: false,
+        link: '/requests',
+      });
+    } else if (update.status === 'cancelled') {
+      const otherId = isRequester ? request.responder._id : request.requester._id;
+      await Notification.create({
+        _id: nid(),
+        userId: otherId,
+        type: 'request_cancelled',
+        message: `Exchange request for "${request.skillRequested?.title || 'a skill'}" has been cancelled.`,
         read: false,
         link: '/requests',
       });
@@ -2255,7 +2471,22 @@ app.get(
       .sort({ createdAt: 1 })
       .lean()
       .exec();
+
+    await Message.updateMany(
+      { 'from._id': uid, 'to._id': req.userId, read: false },
+      { $set: { read: true } }
+    ).exec();
+
     res.json(result);
+  })
+);
+
+app.get(
+  '/api/messages/unread/count',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const count = await Message.countDocuments({ 'to._id': req.userId, read: false }).exec();
+    res.json({ count });
   })
 );
 
@@ -2266,6 +2497,7 @@ app.post(
     const { toUserId, text } = req.body;
 
     if (!toUserId) throw new AppError('Recipient is required', 400);
+    if (toUserId === req.userId) throw new AppError('Cannot send messages to yourself', 400);
     if (!text || text.trim().length === 0) throw new AppError('Message text is required', 400);
 
     const [fromUser, toUser] = await Promise.all([
@@ -2274,6 +2506,18 @@ app.post(
     ]);
 
     if (!toUser) throw new NotFoundError('Recipient');
+
+    const exchange = await ExchangeRequest.findOne({
+      $or: [
+        { 'requester._id': req.userId, 'responder._id': toUserId },
+        { 'requester._id': toUserId, 'responder._id': req.userId },
+      ],
+      status: { $in: ['accepted', 'in_progress', 'completed'] },
+    }).lean().exec();
+
+    if (!exchange) {
+      throw new ForbiddenError('You can only message students with an active exchange relationship');
+    }
 
     const message = await Message.create({
       _id: nid(),
@@ -2284,6 +2528,11 @@ app.post(
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
+
+    io.to(`user:${toUserId}`).emit('message', message);
+
+    const unreadCount = await Message.countDocuments({ 'to._id': toUserId, read: false }).exec();
+    io.to(`user:${toUserId}`).emit('unread_count', { count: unreadCount });
 
     res.status(201).json(message);
   })
@@ -2308,6 +2557,11 @@ app.put(
     const updated = await Message.findByIdAndUpdate(id, { read }, { new: true })
       .lean()
       .exec();
+
+    if (read === true) {
+      const unreadCount = await Message.countDocuments({ 'to._id': req.userId, read: false }).exec();
+      io.to(`user:${req.userId}`).emit('unread_count', { count: unreadCount });
+    }
     res.json(updated);
   })
 );
@@ -3212,10 +3466,49 @@ async function seedDatabase(): Promise<void> {
 
 const PORT = process.env.PORT || 3001;
 
+const io = new SocketIOServer({
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
+});
+
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+  if (!token) {
+    return next(new Error('Authentication required'));
+  }
+  const decoded = verifyToken(token as string);
+  if (!decoded) {
+    return next(new Error('Invalid token'));
+  }
+  (socket as any).userId = decoded.userId;
+  next();
+});
+
+io.on('connection', (socket) => {
+  const userId = (socket as any).userId;
+  console.log(`[Socket] User connected: ${userId}`);
+
+  socket.on('join', (targetId: string) => {
+    if (targetId === userId) {
+      socket.join(`user:${userId}`);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`[Socket] User disconnected: ${userId}`);
+  });
+});
+
+const httpServer = createServer(app);
+
+io.attach(httpServer);
+
 async function start() {
   await connectDatabase();
   await seedDatabase();
-  app.listen(PORT, () => {
+  httpServer.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

@@ -57,7 +57,7 @@ const ExchangeRequestSchema = new Schema<IExchangeRequest>({
     modules: { type: [Schema.Types.Mixed], default: [] },
   },
   skillOffered: { _id: { type: String, default: '' }, title: { type: String, default: '—' } },
-  status: { type: String, enum: ['open', 'pending', 'accepted', 'rejected', 'cancelled', 'completed'], default: 'open' },
+  status: { type: String, enum: ['open', 'pending', 'accepted', 'in_progress', 'rejected', 'cancelled', 'completed'], default: 'open' },
   message: { type: String, default: '' },
   scheduledAt: { type: String, default: '' },
   progress: { type: Number, default: 0, min: 0, max: 100 },

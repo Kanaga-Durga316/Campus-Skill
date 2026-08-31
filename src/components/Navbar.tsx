@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { io, Socket } from 'socket.io-client';
 import logo from '../assets/logo/skillx-logo.png';
 import ThemeToggle from './ThemeToggle';
+import { fetchJSON, API_BASE } from '../api';
 
 /**
  * Navbar Component - Modern & Responsive
@@ -30,7 +32,56 @@ const Navbar: React.FC = () => {
 
   const isAdmin = storedUser?.role === 'admin';
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register';
-  const isDashboardPage = location.pathname === '/dashboard' || location.pathname === '/admin';
+  const isDashboardPage = location.pathname === '/dashboard' || location.pathname === '/admin' || location.pathname === '/messages' || location.pathname === '/requests' || location.pathname === '/courses' || location.pathname === '/my-learning' || location.pathname === '/search' || location.pathname === '/students';
+
+  const [unreadCount, setUnreadCount] = useState(0);
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const user = getStoredUser();
+    if (!token || !user?._id) return;
+
+    const loadUnread = async () => {
+      try {
+        const result = await fetchJSON('/messages/unread/count') as { count: number };
+        setUnreadCount(result.count || 0);
+      } catch {
+        // ignore
+      }
+    };
+
+    loadUnread();
+
+    const socketUrl = API_BASE.replace('/api', '') || 'http://localhost:3001';
+    const socket = io(socketUrl, { auth: { token }, transports: ['websocket'] });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      socket.emit('join', user._id);
+    });
+
+    socket.on('unread_count', (data: { count: number }) => {
+      setUnreadCount(data.count);
+    });
+
+    socket.on('message', () => {
+      loadUnread();
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  function getStoredUser() {
+    try {
+      const u = localStorage.getItem('user');
+      return u ? JSON.parse(u) : null;
+    } catch {
+      return null;
+    }
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg border-b border-gray-100 dark:border-gray-700 shadow-sm">
@@ -76,6 +127,27 @@ const Navbar: React.FC = () => {
                 <NavLink to="/dashboard" active={location.pathname === '/dashboard'}>
                   Dashboard
                 </NavLink>
+                <NavLink to="/my-learning" active={location.pathname === '/my-learning'}>
+                  My Learning
+                </NavLink>
+                <NavLink to="/courses" active={location.pathname === '/courses'}>
+                  Courses
+                </NavLink>
+                <Link
+                  to="/messages"
+                  className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-300 relative ${
+                    location.pathname === '/messages'
+                      ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30'
+                      : 'text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  Messages
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </Link>
                 {isAdmin && (
                   <NavLink to="/admin" active={location.pathname === '/admin'}>
                     Admin Panel
@@ -141,6 +213,20 @@ const Navbar: React.FC = () => {
                   <MobileNavLink to="/dashboard" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/dashboard'}>
                     📊 Dashboard
                   </MobileNavLink>
+                  <MobileNavLink to="/my-learning" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/my-learning'}>
+                    🎓 My Learning
+                  </MobileNavLink>
+               <MobileNavLink to="/courses" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/courses'}>
+                     📚 Courses
+                   </MobileNavLink>
+                   <MobileNavLink to="/messages" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/messages'}>
+                     💬 Messages
+                     {unreadCount > 0 && (
+                       <span className="ml-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                         {unreadCount > 9 ? '9+' : unreadCount}
+                       </span>
+                     )}
+                   </MobileNavLink>
                   {isAdmin && (
                     <MobileNavLink to="/admin" onClick={() => setIsMobileMenuOpen(false)} active={location.pathname === '/admin'}>
                       🛠️ Admin Panel
